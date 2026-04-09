@@ -1,0 +1,66 @@
+@BTL_AES_HostAddress = http://localhost:5282
+
+### Pair a device to a child
+POST {{BTL_AES_HostAddress}}/api/devices/pair
+Content-Type: application/json
+
+{
+  "deviceIdentifier": "dev-001",
+  "childName": "Linh",
+  "batteryPercent": 85,
+  "latitude": 10.762622,
+  "longitude": 106.660172
+}
+
+### Get all devices with rule violation status
+GET {{BTL_AES_HostAddress}}/api/devices
+Accept: application/json
+
+### Update a device location
+PATCH {{BTL_AES_HostAddress}}/api/devices/1/location
+Content-Type: application/json
+
+{
+  "latitude": 10.780000,
+  "longitude": 106.700000,
+  "batteryPercent": 80
+}
+
+### Create an active circle rule
+POST {{BTL_AES_HostAddress}}/api/rules
+Content-Type: application/json
+
+{
+  "name": "School Zone",
+  "childName": "Linh",
+  "ruleType": "Circle",
+  "startTimeUtc": "2026-04-09T08:00:00Z",
+  "endTimeUtc": "2026-04-09T17:00:00Z",
+  "centerLatitude": 10.762622,
+  "centerLongitude": 106.660172,
+  "radiusMeters": 150
+}
+
+### Create an active polygon rule
+POST {{BTL_AES_HostAddress}}/api/rules
+Content-Type: application/json
+
+{
+  "name": "Playground Boundary",
+  "childName": "Linh",
+  "ruleType": "Polygon",
+  "startTimeUtc": "2026-04-10T08:00:00Z",
+  "endTimeUtc": "2026-04-10T10:00:00Z",
+  "polygonCoordinates": [
+    { "latitude": 10.7620, "longitude": 106.6595 },
+    { "latitude": 10.7630, "longitude": 106.6598 },
+    { "latitude": 10.7628, "longitude": 106.6610 },
+    { "latitude": 10.7618, "longitude": 106.6607 }
+  ]
+}
+
+### Get rules, optionally filtered by child name
+GET {{BTL_AES_HostAddress}}/api/rules?childName=Linh
+Accept: application/json
+
+###

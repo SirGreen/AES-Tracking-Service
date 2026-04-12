@@ -18,7 +18,7 @@ public class RuleEvaluationService(AppDbContext dbContext) : IRuleEvaluationServ
             return new RuleValidationResult(false, "Child name is required.");
         }
 
-        if (rule.StartTimeUtc >= rule.EndTimeUtc)
+        if (rule.StartTime >= rule.EndTime)
         {
             return new RuleValidationResult(false, "Rule start time must be before end time.");
         }
@@ -58,8 +58,8 @@ public class RuleEvaluationService(AppDbContext dbContext) : IRuleEvaluationServ
         var hasOverlap = await _dbContext.Rules
             .AnyAsync(existing => existing.ChildName == rule.ChildName
                 && existing.Id != ignoreRuleId
-                && rule.StartTimeUtc < existing.EndTimeUtc
-                && existing.StartTimeUtc < rule.EndTimeUtc,
+                && rule.StartTime < existing.EndTime
+                && existing.StartTime < rule.EndTime,
                 cancellationToken);
 
         return hasOverlap
@@ -79,12 +79,12 @@ public class RuleEvaluationService(AppDbContext dbContext) : IRuleEvaluationServ
             };
         }
 
-        var nowUtc = DateTime.UtcNow;
+        var nowTime = TimeOnly.FromDateTime(DateTime.UtcNow);
         var activeRule = await _dbContext.Rules
             .AsNoTracking()
             .Where(rule => rule.ChildName == device.ChildName
-                && rule.StartTimeUtc <= nowUtc
-                && nowUtc <= rule.EndTimeUtc)
+                && rule.StartTime <= nowTime
+                && nowTime <= rule.EndTime)
             .OrderBy(rule => rule.StartTimeUtc)
             .FirstOrDefaultAsync(cancellationToken);
 

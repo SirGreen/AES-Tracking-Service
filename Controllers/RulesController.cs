@@ -20,7 +20,7 @@ public class RulesController(AppDbContext dbContext, IRuleEvaluationService rule
     {
         var query = _dbContext.Rules
             .AsNoTracking()
-            .OrderBy(rule => rule.StartTimeUtc)
+            .OrderBy(rule => rule.StartTime)
             .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(childName))
@@ -55,8 +55,8 @@ public class RulesController(AppDbContext dbContext, IRuleEvaluationService rule
             Name = request.Name.Trim(),
             ChildName = request.ChildName.Trim(),
             RuleType = request.RuleType,
-            StartTimeUtc = request.StartTimeUtc,
-            EndTimeUtc = request.EndTimeUtc,
+            StartTime = request.StartTime,
+            EndTime = request.EndTime,
             CenterLatitude = request.CenterLatitude,
             CenterLongitude = request.CenterLongitude,
             RadiusMeters = request.RadiusMeters,
@@ -88,8 +88,8 @@ public class RulesController(AppDbContext dbContext, IRuleEvaluationService rule
         rule.Name = request.Name.Trim();
         rule.ChildName = request.ChildName.Trim();
         rule.RuleType = request.RuleType;
-        rule.StartTimeUtc = request.StartTimeUtc;
-        rule.EndTimeUtc = request.EndTimeUtc;
+        rule.StartTime = request.StartTime;
+        rule.EndTime = request.EndTime;
         rule.CenterLatitude = request.CenterLatitude;
         rule.CenterLongitude = request.CenterLongitude;
         rule.RadiusMeters = request.RadiusMeters;
@@ -126,8 +126,8 @@ public class RulesController(AppDbContext dbContext, IRuleEvaluationService rule
         Name = rule.Name,
         ChildName = rule.ChildName,
         RuleType = rule.RuleType,
-        StartTimeUtc = rule.StartTimeUtc,
-        EndTimeUtc = rule.EndTimeUtc,
+        StartTime = rule.StartTime,
+        EndTime = rule.EndTime,
         CenterLatitude = rule.CenterLatitude,
         CenterLongitude = rule.CenterLongitude,
         RadiusMeters = rule.RadiusMeters,

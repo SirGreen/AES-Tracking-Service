@@ -17,9 +17,9 @@ public class CreateRuleRequest
     [Required]
     public RuleType RuleType { get; set; }
 
-    public DateTime StartTimeUtc { get; set; }
+    public TimeOnly StartTime { get; set; }
 
-    public DateTime EndTimeUtc { get; set; }
+    public TimeOnly EndTime { get; set; }
 
     public double? CenterLatitude { get; set; }
 
@@ -43,9 +43,9 @@ public class UpdateRuleRequest
     [Required]
     public RuleType RuleType { get; set; }
 
-    public DateTime StartTimeUtc { get; set; }
+    public TimeOnly StartTime { get; set; }
 
-    public DateTime EndTimeUtc { get; set; }
+    public TimeOnly EndTime { get; set; }
 
     public double? CenterLatitude { get; set; }
 
@@ -66,9 +66,9 @@ public class RuleResponse
 
     public RuleType RuleType { get; set; }
 
-    public DateTime StartTimeUtc { get; set; }
+    public TimeOnly StartTime { get; set; }
 
-    public DateTime EndTimeUtc { get; set; }
+    public TimeOnly EndTime { get; set; }
 
     public double? CenterLatitude { get; set; }
 

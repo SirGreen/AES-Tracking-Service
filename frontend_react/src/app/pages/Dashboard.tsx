@@ -1,0 +1,206 @@
+import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router';
+import { Icon } from 'leaflet';
+import { Card } from '../components/ui/card';
+import { Badge } from '../components/ui/badge';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Battery, BatteryLow, BatteryWarning, Plus, Search, MapPin } from 'lucide-react';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { mockTargets } from '../data/mockData';
+import { Target, Rule } from '../types';
+import { DashboardMap } from '../components/DashboardMap';
+import { updateAllTargetsStatus } from '../utils/geofencing';
+import { toast } from 'sonner';
+import 'leaflet/dist/leaflet.css';
+
+// Fix for default markers in React Leaflet
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+// @ts-ignore
+delete Icon.Default.prototype._getIconUrl;
+Icon.Default.mergeOptions({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+});
+
+export default function Dashboard() {
+  const navigate = useNavigate();
+  const [targets, setTargets] = useState<Target[]>(mockTargets);
+  const [selectedTarget, setSelectedTarget] = useState<Target | null>(targets[0]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number; name: string } | null>(null);
+
+  // Update targets status when they change
+  useEffect(() => {
+    setTargets(prev => updateAllTargetsStatus(prev));
+  }, []);
+
+  const handleSearch = async () => {
+    if (!searchQuery.trim()) {
+      toast.error('Please enter a location to search');
+      return;
+    }
+
+    setIsSearching(true);
+    
+    try {
+      // Use Nominatim API for geocoding (free OpenStreetMap service)
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(searchQuery)}&format=json&limit=1`
+      );
+      
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        const location = data[0];
+        setSearchedLocation({
+          lat: parseFloat(location.lat),
+          lng: parseFloat(location.lon),
+          name: location.display_name
+        });
+        toast.success(`Found: ${location.display_name}`);
+      } else {
+        toast.error('Location not found. Try a different search term.');
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      toast.error('Failed to search location. Please try again.');
+    } finally {
+      setIsSearching(false);
+    }
+  };
+
+  const handleSearchKeyPress = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleSearch();
+    }
+  };
+
+  const getBatteryIcon = (battery: number) => {
+    if (battery > 50) return <Battery className="w-4 h-4" />;
+    if (battery > 20) return <BatteryWarning className="w-4 h-4" />;
+    return <BatteryLow className="w-4 h-4" />;
+  };
+
+  const getBatteryColor = (battery: number) => {
+    if (battery > 50) return 'text-green-600';
+    if (battery > 20) return 'text-orange-500';
+    return 'text-red-600';
+  };
+
+  const handleTargetClick = (target: Target) => {
+    setSelectedTarget(target);
+  };
+
+  return (
+    <div className="h-full flex flex-col gap-4 p-6">
+      {/* Search Bar */}
+      <Card className="p-4">
+        <div className="flex items-center gap-2">
+          <MapPin className="w-5 h-5 text-gray-500" />
+          <Input
+            placeholder="Search for a location (e.g., Manila City Hall, Makati, Philippines)..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onKeyPress={handleSearchKeyPress}
+            className="flex-1"
+          />
+          <Button
+            onClick={handleSearch}
+            disabled={isSearching}
+            className="bg-[#2563eb] hover:bg-[#1d4ed8]"
+          >
+            <Search className="w-4 h-4 mr-2" />
+            {isSearching ? 'Searching...' : 'Search'}
+          </Button>
+        </div>
+        {searchedLocation && (
+          <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
+            <MapPin className="w-4 h-4 text-green-600" />
+            <span className="truncate">{searchedLocation.name}</span>
+          </div>
+        )}
+      </Card>
+
+      {/* Main Content */}
+      <div className="flex-1 flex gap-6 overflow-hidden">
+      {/* Left Panel - Target List and Create Rule */}
+      <div className="w-96 flex flex-col gap-4 overflow-y-auto">
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg">Monitored Targets</h2>
+          <Button
+            size="sm"
+            onClick={() => navigate('/app/rule-manager')}
+            className="bg-[#2563eb] hover:bg-[#1d4ed8]"
+          >
+            <Plus className="w-4 h-4 mr-1" />
+            New Rule
+          </Button>
+        </div>
+        
+        {targets.map((target) => (
+          <Card
+            key={target.id}
+            onClick={() => setSelectedTarget(target)}
+            className={`p-4 cursor-pointer transition-colors border-b border-gray-200 ${
+              selectedTarget?.id === target.id
+                ? 'bg-blue-50 border-l-4 border-l-[#2563eb]'
+                : target.status === 'violation'
+                ? 'bg-red-50'
+                : 'hover:bg-gray-50'
+            }`}
+          >
+            <div className="flex items-start justify-between mb-2">
+              <div>
+                <h3 className="font-semibold">{target.name}</h3>
+                <p className="text-sm text-gray-600">{target.deviceId}</p>
+              </div>
+              <Badge 
+                variant={target.status === 'safe' ? 'default' : 'destructive'}
+                className={target.status === 'safe' ? 'bg-green-500' : 'bg-red-500'}
+              >
+                {target.status === 'safe' ? 'Safe' : 'Violation'}
+              </Badge>
+            </div>
+
+            <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+              {getBatteryIcon(target.battery)}
+              <span>{target.battery}%</span>
+            </div>
+
+            <p className={`text-xs px-2 py-1 rounded inline-block ${
+              target.status === 'safe' 
+                ? 'bg-green-100 text-green-700' 
+                : 'bg-red-100 text-red-700'
+            }`}>
+              {(() => {
+                const activeRule = target.rules.find(r => r.id === target.activeRuleId);
+                return activeRule 
+                  ? `${activeRule.name} (${activeRule.type})` 
+                  : 'No active rule';
+              })()}
+            </p>
+          </Card>
+        ))}
+      </div>
+
+      {/* Right Panel - Map */}
+      <div className="flex-1">
+        <Card className="h-full p-0 overflow-hidden">
+          <DashboardMap
+            targets={targets}
+            selectedTarget={selectedTarget}
+            onTargetClick={handleTargetClick}
+            searchedLocation={searchedLocation}
+          />
+        </Card>
+      </div>
+      </div>
+    </div>
+  );
+}

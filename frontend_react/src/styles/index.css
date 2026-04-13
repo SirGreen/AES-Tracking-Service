@@ -1,0 +1,38 @@
+@import './fonts.css';
+@import './tailwind.css';
+@import './theme.css';
+@import 'leaflet/dist/leaflet.css';
+
+/* Custom Leaflet Label Styles */
+.target-label {
+  background-color: rgba(255, 255, 255, 0.95) !important;
+  border: 2px solid #2563eb !important;
+  border-radius: 6px !important;
+  padding: 4px 8px !important;
+  font-weight: 600 !important;
+  font-size: 12px !important;
+  color: #1e293b !important;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2) !important;
+  white-space: nowrap !important;
+}
+
+.target-label::before {
+  display: none !important;
+}
+
+.rule-label {
+  background-color: rgba(37, 99, 235, 0.95) !important;
+  border: 2px solid white !important;
+  border-radius: 8px !important;
+  padding: 6px 12px !important;
+  font-weight: 700 !important;
+  font-size: 13px !important;
+  color: white !important;
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.3) !important;
+  white-space: nowrap !important;
+  text-align: center !important;
+}
+
+.rule-label::before {
+  display: none !important;
+}

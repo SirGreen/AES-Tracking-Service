@@ -85,7 +85,7 @@ public class RuleEvaluationService(AppDbContext dbContext) : IRuleEvaluationServ
             .Where(rule => rule.ChildName == device.ChildName
                 && rule.StartTime <= nowTime
                 && nowTime <= rule.EndTime)
-            .OrderBy(rule => rule.StartTimeUtc)
+            .OrderBy(rule => rule.StartTime)
             .FirstOrDefaultAsync(cancellationToken);
 
         if (activeRule is null)

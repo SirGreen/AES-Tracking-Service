@@ -87,7 +87,8 @@ export function DashboardMap({
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
 
-    mapRef.current = L.map(containerRef.current).setView([14.6020, 120.9900], 14);
+    // Set default view to Ho Chi Minh City (HCMUT Campus)
+    mapRef.current = L.map(containerRef.current).setView([10.7732, 106.6597], 14);
 
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
@@ -443,6 +444,26 @@ export function DashboardMap({
       }
     }
   }, [viewingRule]);
+
+  // Auto-pan map to the selected target when its location changes
+  useEffect(() => {
+    // Make sure the map exists and we have valid coordinates (not 0,0)
+    if (
+      mapRef.current && 
+      selectedTarget && 
+      selectedTarget.latitude !== 0 && 
+      selectedTarget.longitude !== 0
+    ) {
+      mapRef.current.flyTo(
+        [selectedTarget.latitude, selectedTarget.longitude], 
+        15, // Zoom level
+        {
+          animate: true,
+          duration: 1.5 // Animation speed in seconds
+        }
+      );
+    }
+  }, [selectedTarget?.id, selectedTarget?.latitude, selectedTarget?.longitude]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

@@ -48,3 +48,63 @@ export const deleteRuleApi = async (id: number): Promise<void> => {
     throw new Error('Failed to delete rule');
   }
 };
+
+// ─── Device Pairing API ──────────────────────────────────────────────
+
+export interface PairDevicePayload {
+  deviceIdentifier: string;
+  childName: string;
+  batteryPercent?: number;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+export const pairDevice = async (data: PairDevicePayload): Promise<ApiDeviceResponse> => {
+  const response = await fetch(`${API_BASE_URL}/devices/pair`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || 'Failed to pair device');
+  }
+  return response.json();
+};
+
+export interface UpdateDevicePayload {
+  deviceIdentifier: string;
+  childName?: string | null;
+  batteryPercent: number;
+  latitude?: number | null;
+  longitude?: number | null;
+}
+
+export const updateDevice = async (id: number, data: UpdateDevicePayload): Promise<ApiDeviceResponse> => {
+  const response = await fetch(`${API_BASE_URL}/devices/${id}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || 'Failed to update device');
+  }
+  return response.json();
+};
+
+export const deleteDevice = async (id: number): Promise<void> => {
+  const response = await fetch(`${API_BASE_URL}/devices/${id}`, {
+    method: 'DELETE',
+  });
+
+  if (!response.ok) {
+    throw new Error('Failed to delete device');
+  }
+};

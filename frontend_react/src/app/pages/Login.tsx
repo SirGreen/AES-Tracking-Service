@@ -1,13 +1,18 @@
+import { useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Button } from '../components/ui/button';
 import { Shield } from 'lucide-react';
 
 export default function Login() {
   const navigate = useNavigate();
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    navigate('/app');
+    if (username && password) {
+      navigate('/app');
+    }
   };
 
   return (
@@ -35,9 +40,38 @@ export default function Login() {
           </div>
 
           <form onSubmit={handleLogin} className="space-y-6">
-            <Button 
+            <div>
+              <label htmlFor="username" className="block text-sm font-medium text-gray-700 mb-2">
+                Username
+              </label>
+              <input
+                id="username"
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                className="w-full h-12 px-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563eb] focus:border-transparent"
+                placeholder="Enter your username"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="password" className="block text-sm font-medium text-gray-700 mb-2">
+                Password
+              </label>
+              <input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full h-12 px-4 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#2563eb] focus:border-transparent"
+                placeholder="Enter your password"
+              />
+            </div>
+
+            <Button
               type="submit"
               className="w-full h-12 bg-[#2563eb] hover:bg-[#1d4ed8]"
+              disabled={!username || !password}
             >
               Login
             </Button>

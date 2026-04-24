@@ -14,6 +14,9 @@ import { updateAllTargetsStatus } from '../utils/geofencing';
 import { toast } from 'sonner';
 import 'leaflet/dist/leaflet.css';
 
+// API
+import { getDevices, getRules } from '../api/trackingApi';
+
 // Fix for default markers in React Leaflet
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
 import markerIcon from 'leaflet/dist/images/marker-icon.png';
@@ -29,16 +32,66 @@ Icon.Default.mergeOptions({
 
 export default function Dashboard() {
   const navigate = useNavigate();
-  const [targets, setTargets] = useState<Target[]>(mockTargets);
-  const [selectedTarget, setSelectedTarget] = useState<Target | null>(targets[0]);
+  const [targets, setTargets] = useState<Target[]>([]);
+  const [selectedTarget, setSelectedTarget] = useState<Target | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number; name: string } | null>(null);
 
-  // Update targets status when they change
+// Fetch real devices and rules from the .NET backend
   useEffect(() => {
-    setTargets(prev => updateAllTargetsStatus(prev));
-  }, []);
+    const fetchTargets = async () => {
+      try {
+        // Fetch both to get rule names
+        const [apiDevices, apiRules] = await Promise.all([
+          getDevices(),
+          getRules()
+        ]);
+        
+        // Map the rules first
+        const mappedRules: Rule[] = apiRules.map(r => ({
+          id: r.id.toString(),
+          name: r.name,
+          type: r.ruleType === 'Circle' ? 'circle' : 'polygon',
+          enabled: true,
+          targetId: apiDevices.find(d => d.childName === r.childName)?.id.toString() || '',
+          schedule: {
+            startTime: r.startTime.substring(0, 5),
+            endTime: r.endTime.substring(0, 5),
+          }
+        }));
+
+        // Map the devices
+        const mappedTargets: Target[] = apiDevices.map(d => ({
+          id: d.id.toString(),
+          name: d.childName || 'Unknown',
+          deviceId: d.deviceIdentifier,
+          battery: d.batteryPercent,
+          status: d.ruleStatus.isViolatingRule ? 'violation' : 'safe', 
+          latitude: d.latitude || 0,
+          longitude: d.longitude || 0,
+          rules: mappedRules.filter(rule => rule.targetId === d.id.toString()),
+          activeRuleId: d.ruleStatus.activeRuleId?.toString() || null 
+        }));
+
+        setTargets(mappedTargets);
+        
+        // Keep the currently selected target updated with new coordinates
+        if (selectedTarget) {
+           const updatedSelected = mappedTargets.find(t => t.id === selectedTarget.id);
+           if (updatedSelected) setSelectedTarget(updatedSelected);
+        } else if (mappedTargets.length > 0) {
+          setSelectedTarget(mappedTargets[0]);
+        }
+      } catch (error) {
+        console.error("Failed to load targets from API:", error);
+      }
+    };
+
+    fetchTargets();
+    const intervalId = setInterval(fetchTargets, 5000);
+    return () => clearInterval(intervalId);
+  }, [selectedTarget]);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
@@ -104,7 +157,7 @@ export default function Dashboard() {
         <div className="flex items-center gap-2">
           <MapPin className="w-5 h-5 text-gray-500" />
           <Input
-            placeholder="Search for a location (e.g., Manila City Hall, Makati, Philippines)..."
+            placeholder="Search for a location (e.g., District 10, Ho Chi Minh City, Vietnam)..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             onKeyPress={handleSearchKeyPress}

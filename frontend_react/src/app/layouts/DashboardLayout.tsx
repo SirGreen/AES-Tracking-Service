@@ -1,15 +1,39 @@
 import { Outlet, useLocation, useNavigate } from 'react-router';
 import { LayoutDashboard, Radio, Settings, Bell } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Badge } from '../components/ui/badge';
-import { mockNotifications } from '../data/mockData';
+import { getDevices } from '../api/trackingApi';
+import { ApiDeviceResponse } from '../types';
 
 export default function DashboardLayout() {
   const location = useLocation();
   const navigate = useNavigate();
-  const [notifications] = useState(mockNotifications);
+  const [alertCount, setAlertCount] = useState(0);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  // Derive unread alert count from real device data
+  useEffect(() => {
+    const fetchAlertCount = async () => {
+      try {
+        const devices = await getDevices();
+        let count = 0;
+        for (const device of devices) {
+          if (device.ruleStatus.isViolatingRule) count++;
+          if (device.batteryPercent <= 50) count++;
+          // Check if device is inactive (not updated in last 5 min)
+          const updatedAt = new Date(device.updatedAtUtc).getTime();
+          const fiveMinAgo = Date.now() - 5 * 60 * 1000;
+          if (updatedAt < fiveMinAgo) count++;
+        }
+        setAlertCount(count);
+      } catch {
+        // Silently fail – layout should still render
+      }
+    };
+
+    fetchAlertCount();
+    const intervalId = setInterval(fetchAlertCount, 10000);
+    return () => clearInterval(intervalId);
+  }, []);
 
   const navItems = [
     { path: '/app', label: 'Dashboard', icon: LayoutDashboard },
@@ -56,13 +80,13 @@ export default function DashboardLayout() {
                   >
                     <Icon className="w-5 h-5" />
                     <span>{item.label}</span>
-                    {item.label === 'Notifications' && unreadCount > 0 && (
+                    {item.label === 'Notifications' && alertCount > 0 && (
                       <Badge 
                         className={`ml-auto ${
                           isActive ? 'bg-white text-[#2563eb]' : 'bg-[#2563eb] text-white'
                         }`}
                       >
-                        {unreadCount}
+                        {alertCount}
                       </Badge>
                     )}
                   </button>
@@ -84,9 +108,9 @@ export default function DashboardLayout() {
             className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
           >
             <Bell className="w-6 h-6 text-gray-700" />
-            {unreadCount > 0 && (
+            {alertCount > 0 && (
               <span className="absolute top-1 right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">
-                {unreadCount}
+                {alertCount}
               </span>
             )}
           </button>

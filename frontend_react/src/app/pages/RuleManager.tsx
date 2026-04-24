@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { Card } from '../components/ui/card';
 import { Button } from '../components/ui/button';
@@ -6,16 +6,75 @@ import { Input } from '../components/ui/input';
 import { Circle, Pentagon, Check, ArrowLeft, Clock, Trash2, Play, Eye, EyeOff } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Switch } from '../components/ui/switch';
-import { mockTargets, mockRules } from '../data/mockData';
+// import { mockTargets, mockRules } from '../data/mockData';
 import { Rule, Target } from '../types';
 import { DashboardMap } from '../components/DashboardMap';
 import { toast } from 'sonner';
 import { formatScheduleTime, validateScheduleForTarget } from '../utils/ruleScheduler';
 
+import { createRule, getDevices, getRules, deleteRuleApi } from '../api/trackingApi';
+import { CreateRuleRequest } from '../types';
+
 export default function RuleManager() {
   const navigate = useNavigate();
-  const [targets, setTargets] = useState(mockTargets);
-  const [allRules, setAllRules] = useState(mockRules);
+  const [targets, setTargets] = useState<Target[]>([]);
+  const [allRules, setAllRules] = useState<Rule[]>([]);
+
+  // Fetch live devices and rules from the .NET backend
+  useEffect(() => {
+    const fetchRuleManagerData = async () => {
+      try {
+        // Fetch both devices and rules simultaneously
+        const [apiDevices, apiRules] = await Promise.all([
+          getDevices(),
+          getRules()
+        ]);
+
+        // Map the API Rules to the UI format
+        const mappedRules: Rule[] = apiRules.map(r => ({
+          id: r.id.toString(),
+          name: r.name,
+          type: r.ruleType === 'Circle' ? 'circle' : 'polygon',
+          enabled: true,
+          targetId: apiDevices.find(d => d.childName === r.childName)?.id.toString() || '',
+          schedule: {
+            startTime: r.startTime.substring(0, 5),
+            endTime: r.endTime.substring(0, 5),
+          },
+          ...(r.ruleType === 'Circle' && {
+            center: [r.centerLatitude!, r.centerLongitude!],
+            radius: r.radiusMeters!
+          }),
+          ...(r.ruleType === 'Polygon' && r.polygonCoordinates && {
+            area: r.polygonCoordinates.map(p => [p.latitude, p.longitude] as [number, number])
+          })
+        }));
+
+        // Map the API Devices to the UI format (attaching their specific rules)
+        const mappedTargets: Target[] = apiDevices.map(d => ({
+          id: d.id.toString(),
+          name: d.childName || 'Unknown',
+          deviceId: d.deviceIdentifier,
+          battery: d.batteryPercent,
+          status: d.ruleStatus.isViolatingRule ? 'violation' : 'safe',
+          latitude: d.latitude || 0,
+          longitude: d.longitude || 0,
+          rules: mappedRules.filter(rule => rule.targetId === d.id.toString()),
+          activeRuleId: d.ruleStatus.activeRuleId?.toString() || null
+        }));
+
+        setAllRules(mappedRules);
+        setTargets(mappedTargets);
+
+      } catch (error) {
+        console.error("Failed to load Rule Manager data:", error);
+        toast.error("Failed to connect to the tracking server.");
+      }
+    };
+
+    fetchRuleManagerData();
+  }, []);
+
   const [ruleType, setRuleType] = useState<'circle' | 'polygon'>('circle');
   const [drawMode, setDrawMode] = useState<'circle' | 'polygon' | null>(null);
   const [tempRule, setTempRule] = useState<Partial<Rule> | null>(null);
@@ -55,10 +114,18 @@ export default function RuleManager() {
   };
 
   const handleDrawComplete = useCallback((rule: Partial<Rule>) => {
-    setTempRule(rule);
-  }, []);
+    if (rule.type === 'circle') {
+      // Override the map's default 500m with the actual input value
+      setTempRule({
+        ...rule,
+        radius: parseInt(ruleRadius) || 500
+      });
+    } else {
+      setTempRule(rule);
+    }
+  }, [ruleRadius]);
 
-  const saveRule = () => {
+  const saveRule = async () => {
     if (!tempRule || !targetForRule || !ruleName.trim()) {
       toast.error('Please complete all fields');
       return;
@@ -74,59 +141,76 @@ export default function RuleManager() {
       return;
     }
 
-    // Validate time again before saving
-    const validation = validateScheduleForTarget(
-      { startTime, endTime },
-      targetForRule,
-      allRules
-    );
-
-    if (!validation.valid && validation.conflictingRule) {
-      toast.error(
-        `Time conflict with rule "${validation.conflictingRule.name}"`
-      );
+    // Find the selected target to get the childName for the API payload
+    const selectedTargetObj = targets.find(t => t.id === targetForRule);
+    if (!selectedTargetObj) {
+      toast.error('Selected target not found');
       return;
     }
 
-    const newRule: Rule = {
-      id: `rule-${Date.now()}`,
+    // Format the payload for the .NET Backend
+    const apiPayload: CreateRuleRequest = {
       name: ruleName.trim(),
-      type: tempRule.type as 'circle' | 'polygon',
-      enabled: true,
-      targetId: targetForRule,
-      schedule: {
-        startTime,
-        endTime,
-      },
-      ...(tempRule.type === 'circle' && {
-        center: tempRule.center,
-        radius: parseInt(ruleRadius) || 500
-      }),
-      ...(tempRule.type === 'polygon' && {
-        area: tempRule.area
-      })
+      childName: selectedTargetObj.name,
+      ruleType: tempRule.type === 'circle' ? 'Circle' : 'Polygon',
+      startTime: `${startTime}:00`, 
+      endTime: `${endTime}:00`,
+      
+      // Map Circle data
+      centerLatitude: tempRule.type === 'circle' && tempRule.center ? tempRule.center[0] : null,
+      centerLongitude: tempRule.type === 'circle' && tempRule.center ? tempRule.center[1] : null,
+      radiusMeters: tempRule.type === 'circle' ? (parseInt(ruleRadius) || 500) : null,
+      
+      // Map Polygon data (convert [lat, lng] arrays to GeoPoint objects)
+      polygonCoordinates: tempRule.type === 'polygon' && tempRule.area 
+        ? tempRule.area.map(point => ({ latitude: point[0], longitude: point[1] }))
+        : null
     };
 
-    // Add to rules list
-    setAllRules(prev => [...prev, newRule]);
+    try {
+      // Send to backend
+      const savedApiRule = await createRule(apiPayload);
 
-    // Update target's rules
-    setTargets(prev => prev.map(t => {
-      if (t.id === targetForRule) {
-        return {
-          ...t,
-          rules: [...t.rules, newRule],
-        };
-      }
-      return t;
-    }));
+      // Map the backend response back to the UI format so the map can render it immediately
+      const newUiRule: Rule = {
+        id: savedApiRule.id.toString(),
+        name: savedApiRule.name,
+        type: savedApiRule.ruleType === 'Circle' ? 'circle' : 'polygon',
+        enabled: true,
+        targetId: targetForRule,
+        schedule: {
+          startTime: savedApiRule.startTime.substring(0, 5),
+          endTime: savedApiRule.endTime.substring(0, 5),
+        },
+        ...(savedApiRule.ruleType === 'Circle' && {
+          center: [savedApiRule.centerLatitude!, savedApiRule.centerLongitude!],
+          radius: savedApiRule.radiusMeters!
+        }),
+        ...(savedApiRule.ruleType === 'Polygon' && {
+          area: savedApiRule.polygonCoordinates!.map(p => [p.latitude, p.longitude])
+        })
+      };
 
-    toast.success(`Rule "${ruleName}" created successfully!`);
-    
-    // Reset form
-    setRuleName('');
-    setDrawMode(null);
-    setTempRule(null);
+      // Update local state to reflect the new rule
+      setAllRules(prev => [...prev, newUiRule]);
+      setTargets(prev => prev.map(t => {
+        if (t.id === targetForRule) {
+          return { ...t, rules: [...t.rules, newUiRule] };
+        }
+        return t;
+      }));
+
+      toast.success(`Rule "${ruleName}" created successfully!`);
+      
+      // Reset form
+      setRuleName('');
+      setDrawMode(null);
+      setTempRule(null);
+
+    } catch (error: any) {
+      console.error("Error saving rule:", error);
+      toast.error(error.message || "Failed to save rule to database");
+    }
   };
 
   const handleRadiusChange = (value: string) => {
@@ -170,24 +254,28 @@ export default function RuleManager() {
     toast.success('Active rule changed');
   };
 
-  const deleteRule = (ruleId: string) => {
-    const rule = allRules.find(r => r.id === ruleId);
-    if (!rule) return;
+const deleteRule = async (ruleId: string) => {
+    try {
+      // 1. Tell backend to delete it (Convert string ID back to number)
+      await deleteRuleApi(parseInt(ruleId));
 
-    setAllRules(prev => prev.filter(r => r.id !== ruleId));
-    
-    setTargets(prev => prev.map(t => ({
-      ...t,
-      rules: t.rules.filter(r => r.id !== ruleId),
-      activeRuleId: t.activeRuleId === ruleId ? null : t.activeRuleId
-    })));
+      // 2. Update UI state on success
+      setAllRules(prev => prev.filter(r => r.id !== ruleId));
+      setTargets(prev => prev.map(t => ({
+        ...t,
+        rules: t.rules.filter(r => r.id !== ruleId),
+        activeRuleId: t.activeRuleId === ruleId ? null : t.activeRuleId
+      })));
 
-    // Clear viewing if this was the rule being viewed
-    if (viewingRuleId === ruleId) {
-      setViewingRuleId(null);
+      if (viewingRuleId === ruleId) {
+        setViewingRuleId(null);
+      }
+
+      toast.success('Rule deleted successfully');
+    } catch (error) {
+      console.error("Error deleting rule:", error);
+      toast.error("Failed to delete rule from database");
     }
-
-    toast.success('Rule deleted');
   };
 
   const toggleViewRule = (ruleId: string) => {

@@ -41,3 +41,56 @@ export interface Notification {
   message: string;
   read: boolean;
 }
+
+export interface GeoPoint {
+  latitude: number;
+  longitude: number;
+}
+
+export interface RuleViolationStatus {
+  hasActiveRule: boolean;
+  isViolatingRule: boolean;
+  activeRuleId: number | null;
+  message: string;
+}
+
+// Maps to C# DeviceResponse
+export interface ApiDeviceResponse {
+  id: number;
+  deviceIdentifier: string;
+  childName: string | null;
+  batteryPercent: number;
+  latitude: number | null;
+  longitude: number | null;
+  createdAtUtc: string;
+  updatedAtUtc: string;
+  ruleStatus: RuleViolationStatus;
+}
+
+// Maps to C# RuleResponse
+export interface ApiRuleResponse {
+  id: number;
+  name: string;
+  childName: string;
+  ruleType: 'Circle' | 'Polygon';
+  startTime: string; // Format: "HH:mm:ss"
+  endTime: string;   // Format: "HH:mm:ss"
+  centerLatitude: number | null;
+  centerLongitude: number | null;
+  radiusMeters: number | null;
+  polygonCoordinates: GeoPoint[] | null;
+  createdAtUtc: string;
+}
+
+// Maps to C# CreateRuleRequest
+export interface CreateRuleRequest {
+  name: string;
+  childName: string;
+  ruleType: 'Circle' | 'Polygon';
+  startTime: string; // Requires seconds for .NET TimeOnly (e.g., "08:00:00")
+  endTime: string;
+  centerLatitude?: number | null;
+  centerLongitude?: number | null;
+  radiusMeters?: number | null;
+  polygonCoordinates?: GeoPoint[] | null;
+}

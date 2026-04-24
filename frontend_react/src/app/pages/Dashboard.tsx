@@ -75,23 +75,24 @@ export default function Dashboard() {
         }));
 
         setTargets(mappedTargets);
-        
-        // Keep the currently selected target updated with new coordinates
-        if (selectedTarget) {
-           const updatedSelected = mappedTargets.find(t => t.id === selectedTarget.id);
-           if (updatedSelected) setSelectedTarget(updatedSelected);
-        } else if (mappedTargets.length > 0) {
-          setSelectedTarget(mappedTargets[0]);
-        }
+
+        // Keep selected target in sync without re-triggering the polling effect.
+        setSelectedTarget((previous) => {
+          if (!previous) {
+            return mappedTargets[0] ?? null;
+          }
+
+          return mappedTargets.find((target) => target.id === previous.id) ?? null;
+        });
       } catch (error) {
         console.error("Failed to load targets from API:", error);
       }
     };
 
     fetchTargets();
-    const intervalId = setInterval(fetchTargets, 5000);
+    const intervalId = setInterval(fetchTargets, 1000);
     return () => clearInterval(intervalId);
-  }, [selectedTarget]);
+  }, []);
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {

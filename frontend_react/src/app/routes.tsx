@@ -5,6 +5,7 @@ import Dashboard from "./pages/Dashboard";
 import PairDevice from "./pages/PairDevice";
 import RuleManager from "./pages/RuleManager";
 import Notifications from "./pages/Notifications";
+import DebugPage from "./pages/DebugPage";
 
 export const router = createBrowserRouter([
   {
@@ -36,6 +37,11 @@ export const router = createBrowserRouter([
         path: "notifications",
         element: <Notifications />,
         errorElement: <div className="p-8">Error loading notifications page</div>,
+      },
+      {
+        path: "debug",
+        element: <DebugPage />,
+        errorElement: <div className="p-8">Error loading debug page</div>,
       },
     ],
   },

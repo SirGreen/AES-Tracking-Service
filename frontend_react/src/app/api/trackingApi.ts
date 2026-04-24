@@ -49,7 +49,7 @@ export const deleteRuleApi = async (id: number): Promise<void> => {
   }
 };
 
-// ─── Device Pairing API ──────────────────────────────────────────────
+//Device Pairing API
 
 export interface PairDevicePayload {
   deviceIdentifier: string;
@@ -107,4 +107,28 @@ export const deleteDevice = async (id: number): Promise<void> => {
   if (!response.ok) {
     throw new Error('Failed to delete device');
   }
+};
+
+// Debug API
+
+export interface UpdateDeviceLocationPayload {
+  latitude: number;
+  longitude: number;
+  batteryPercent?: number;
+}
+
+export const updateDeviceLocation = async (id: number, data: UpdateDeviceLocationPayload): Promise<ApiDeviceResponse> => {
+  const response = await fetch(`${API_BASE_URL}/devices/${id}/location`, {
+    method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(data),
+  });
+
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.message || 'Failed to update device location');
+  }
+  return response.json();
 };

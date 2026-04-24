@@ -33,6 +33,7 @@ Core capabilities:
 - Draw circle or polygon geofence rules per child with time schedules
 - Real-time violation detection on every location push
 - Interactive Leaflet map dashboard with live status badges
+- Device Debug Simulator for manual coordinate and battery overrides
 - Violation log with a 5-minute deduplication window
 
 ---
@@ -40,14 +41,14 @@ Core capabilities:
 ## System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                     React Frontend (Vite)                   │
-│  ┌────────────┐ ┌─────────────┐ ┌───────────┐ ┌──────────┐  │
-│  │  Dashboard │ │ RuleManager │ │PairDevice │ │  Notifs  │  │
-│  └──────┬─────┘ └──────┬──────┘ └─────┬─────┘ └────┬─────┘  │
-│         └──────────────┴──────────────┴────────────┘        │
-│                        trackingApi.ts (fetch)               │
-└───────────────────────────┬─────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          React Frontend (Vite)                          │
+│  ┌────────────┐ ┌─────────────┐ ┌───────────┐ ┌──────────┐ ┌──────────┐ │
+│  │  Dashboard │ │ RuleManager │ │PairDevice │ │  Notifs  │ │  Debug   │ │
+│  └──────┬─────┘ └──────┬──────┘ └─────┬─────┘ └────┬─────┘ └────┬─────┘ │
+│         └──────────────┴──────────────┴────────────┴────────────┘       │
+│                            trackingApi.ts (fetch)                       │
+└──────────────────────────────┬──────────────────────────────────────────┘
                             │ HTTP/JSON  (CORS: localhost:5173)
                             ▼
 ┌─────────────────────────────────────────────────────────────┐
@@ -124,7 +125,10 @@ The **Rule Manager** lists all rules grouped by target child. Operators can:
 - Delete a rule (calls `DELETE /api/rules/{id}`)
 
 ### UC-7: Receive Notifications
-The **Notifications** page displays alert cards for rule violations, low battery, and connection-lost events. (Currently populated from mock data; backend `ViolationLog` integration is a planned enhancement.)
+The **Notifications** page displays alert cards for rule violations, low battery, and connection-lost events. These are derived in real-time from the backend device status.
+
+### UC-8: Simulate Device Movement and Battery (Debug)
+Using the hidden **Debug Simulator** page (`/app/debug`), developers can manually override a device's GPS coordinates and battery level. This triggers immediate backend rule re-evaluation, allowing for end-to-end testing of geofence boundaries and alert logic without needing a physical hardware device.
 
 ---
 
@@ -194,8 +198,9 @@ AES-Tracking-Service/
         │   ├── Login.tsx
         │   ├── Dashboard.tsx    # Live map + device list (polls every 5s)
         │   ├── RuleManager.tsx  # Rule creation + management
-        │   ├── PairDevice.tsx   # Device pairing (partially mock)
-        │   └── Notifications.tsx # Alert centre (mock data)
+        │   ├── PairDevice.tsx   # Device pairing and management
+        │   ├── Notifications.tsx # Alert centre (real-time derived)
+        │   └── DebugPage.tsx     # Hidden device simulator
         ├── components/
         │   └── DashboardMap.tsx # react-leaflet map with draw tools
         ├── types/               # Shared TypeScript type definitions
@@ -213,12 +218,6 @@ AES-Tracking-Service/
 | .NET SDK     | 8.0+     | `dotnet --version` to verify       |
 | Node.js      | 18+      | `node --version` to verify         |
 | npm / pnpm   | any      | Used to install frontend deps      |
-
-### Running the code (old version)
-
-Run `npm i` to install the dependencies.
-
-Run `npm run dev` to start the development server.
 
 ### Running the Backend (.NET API)
 
@@ -268,6 +267,7 @@ The app will be available at **http://localhost:5173**.
    ```
 7. Go to **Rule Manager** → select the target → draw a circle or polygon zone → set times → save
 8. The **Dashboard** will update within 5 seconds showing "Safe" or "Violation"
+9. **Advanced Testing:** Access `http://localhost:5173/app/debug` to manually move the device around and watch the dashboard/notifications respond.
 
 ---
 
@@ -314,8 +314,6 @@ The app will be available at **http://localhost:5173**.
 ## Known Limitations
 
 - **No authentication** — The login page bypasses credential checks. Any security is on the honour system.
-- **PairDevice page is partially mocked** — It does not call the backend; device list comes from `mockData.ts`.
-- **Notifications page is fully mocked** — Violation logs exist in the database but are not exposed via API or fetched by the frontend.
 - **Rules are time-of-day only (no day-of-week)** — Schedules apply every day; there is no weekly recurrence.
 - **`toggleRuleEnabled` is UI-only** — Disabling a rule in the UI does not persist to the backend. The backend always evaluates all rules whose time window matches `DateTime.UtcNow`.
 - **`setActiveRule` is UI-only** — Manually activating a rule in the Rule Manager panel does not affect backend evaluation.

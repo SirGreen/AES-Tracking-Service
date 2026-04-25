@@ -17,7 +17,6 @@ export interface Rule {
   area?: Array<[number, number]>; // For polygon
   center?: [number, number]; // For circle
   radius?: number; // For circle (in meters)
-  enabled: boolean; // Can be disabled/enabled
   targetId: string; // Which target this rule belongs to
   schedule: {
     startTime: string; // Format: "HH:mm" (e.g., "08:00") - REQUIRED

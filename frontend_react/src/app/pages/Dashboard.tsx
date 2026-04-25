@@ -5,7 +5,7 @@ import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Battery, BatteryLow, BatteryWarning, Plus, Search, MapPin } from 'lucide-react';
+import { Battery, BatteryLow, BatteryWarning, Plus, Search, MapPin, Eye, EyeOff } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { mockTargets } from '../data/mockData';
 import { Target, Rule } from '../types';
@@ -37,6 +37,10 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number; name: string } | null>(null);
+  const [viewingRule, setViewingRule] = useState<Rule | null>(null);
+  const [hiddenRuleIds, setHiddenRuleIds] = useState<string[]>(() => {
+    return JSON.parse(localStorage.getItem('hiddenRuleIds') || '[]');
+  });
 
 // Fetch real devices and rules from the .NET backend
   useEffect(() => {
@@ -53,26 +57,39 @@ export default function Dashboard() {
           id: r.id.toString(),
           name: r.name,
           type: r.ruleType === 'Circle' ? 'circle' : 'polygon',
-          enabled: true,
           targetId: apiDevices.find(d => d.childName === r.childName)?.id.toString() || '',
           schedule: {
             startTime: r.startTime.substring(0, 5),
             endTime: r.endTime.substring(0, 5),
-          }
+          },
+          ...(r.ruleType === 'Circle' && {
+            center: [r.centerLatitude!, r.centerLongitude!],
+            radius: r.radiusMeters!
+          }),
+          ...(r.ruleType === 'Polygon' && r.polygonCoordinates && {
+            area: r.polygonCoordinates.map(p => [p.latitude, p.longitude] as [number, number])
+          })
         }));
 
+        const activeRulesOverride = JSON.parse(localStorage.getItem('activeRules') || '{}');
+
         // Map the devices
-        const mappedTargets: Target[] = apiDevices.map(d => ({
-          id: d.id.toString(),
-          name: d.childName || 'Unknown',
-          deviceId: d.deviceIdentifier,
-          battery: d.batteryPercent,
-          status: d.ruleStatus.isViolatingRule ? 'violation' : 'safe', 
-          latitude: d.latitude || 0,
-          longitude: d.longitude || 0,
-          rules: mappedRules.filter(rule => rule.targetId === d.id.toString()),
-          activeRuleId: d.ruleStatus.activeRuleId?.toString() || null 
-        }));
+        const mappedTargets: Target[] = apiDevices.map(d => {
+          const targetId = d.id.toString();
+          return {
+            id: targetId,
+            name: d.childName || 'Unknown',
+            deviceId: d.deviceIdentifier,
+            battery: d.batteryPercent,
+            status: d.ruleStatus.isViolatingRule ? 'violation' : 'safe', 
+            latitude: d.latitude || 0,
+            longitude: d.longitude || 0,
+            rules: mappedRules.filter(rule => rule.targetId === targetId),
+            activeRuleId: activeRulesOverride[targetId] !== undefined 
+              ? activeRulesOverride[targetId] 
+              : (d.ruleStatus.activeRuleId?.toString() || null) 
+          };
+        });
 
         setTargets(mappedTargets);
 
@@ -84,6 +101,15 @@ export default function Dashboard() {
 
           return mappedTargets.find((target) => target.id === previous.id) ?? null;
         });
+
+        // Set viewing rule from localStorage
+        const savedViewingRuleId = localStorage.getItem('viewingRuleId');
+        if (savedViewingRuleId) {
+          const rule = mappedRules.find(r => r.id === savedViewingRuleId);
+          setViewingRule(rule || null);
+        } else {
+          setViewingRule(null);
+        }
       } catch (error) {
         console.error("Failed to load targets from API:", error);
       }
@@ -149,6 +175,29 @@ export default function Dashboard() {
 
   const handleTargetClick = (target: Target) => {
     setSelectedTarget(target);
+  };
+
+  const toggleViewRule = (rule: Rule) => {
+    const isViewing = viewingRule?.id === rule.id;
+    const newId = isViewing ? null : rule.id;
+    
+    if (newId) {
+      localStorage.setItem('viewingRuleId', newId);
+      setViewingRule(rule);
+    } else {
+      localStorage.removeItem('viewingRuleId');
+      setViewingRule(null);
+    }
+  };
+
+  const toggleRuleVisibility = (ruleId: string) => {
+    setHiddenRuleIds(prev => {
+      const next = prev.includes(ruleId) 
+        ? prev.filter(id => id !== ruleId) 
+        : [...prev, ruleId];
+      localStorage.setItem('hiddenRuleIds', JSON.stringify(next));
+      return next;
+    });
   };
 
   return (
@@ -227,18 +276,44 @@ export default function Dashboard() {
               <span>{target.battery}%</span>
             </div>
 
-            <p className={`text-xs px-2 py-1 rounded inline-block ${
-              target.status === 'safe' 
-                ? 'bg-green-100 text-green-700' 
-                : 'bg-red-100 text-red-700'
-            }`}>
-              {(() => {
-                const activeRule = target.rules.find(r => r.id === target.activeRuleId);
-                return activeRule 
-                  ? `${activeRule.name} (${activeRule.type})` 
-                  : 'No active rule';
-              })()}
-            </p>
+            {(() => {
+              const activeRule = target.rules.find(r => r.id === target.activeRuleId);
+              if (!activeRule) return (
+                <div className="mt-3 p-2 rounded-md w-full bg-gray-50 border border-gray-100 text-gray-400 text-xs italic text-center">
+                  No active rule
+                </div>
+              );
+
+              const isHidden = hiddenRuleIds.includes(activeRule.id);
+
+              return (
+                <div className={`mt-3 p-2 rounded-md w-full flex items-center justify-between transition-all ${
+                  target.status === 'safe' 
+                    ? 'bg-green-50 border border-green-100' 
+                    : 'bg-red-50 border border-red-100'
+                }`}>
+                  <p className={`text-xs font-medium truncate pr-2 ${
+                    target.status === 'safe' ? 'text-green-700' : 'text-red-700'
+                  }`}>
+                    {activeRule.name} ({activeRule.type})
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      toggleRuleVisibility(activeRule.id);
+                    }}
+                    className={`h-7 w-7 p-0 rounded-full hover:bg-white/50 flex-shrink-0 ${
+                      !isHidden ? 'text-blue-600 bg-white/30 shadow-sm' : 'text-gray-400'
+                    }`}
+                    title={isHidden ? "Show rule on map" : "Hide rule on map"}
+                  >
+                    {isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                  </Button>
+                </div>
+              );
+            })()}
           </Card>
         ))}
       </div>
@@ -251,6 +326,8 @@ export default function Dashboard() {
             selectedTarget={selectedTarget}
             onTargetClick={handleTargetClick}
             searchedLocation={searchedLocation}
+            viewingRule={viewingRule}
+            hiddenRuleIds={hiddenRuleIds}
           />
         </Card>
       </div>

@@ -13,7 +13,8 @@ interface DashboardMapProps {
   onDrawComplete?: (rule: Partial<Rule>) => void;
   tempRule?: Partial<Rule> | null;
   searchedLocation?: { lat: number; lng: number; name: string } | null;
-  viewingRule?: Rule | null; // Add this prop
+  viewingRule?: Rule | null;
+  hiddenRuleIds?: string[];
 }
 
 const createCustomIcon = (status: 'safe' | 'violation') => {
@@ -34,7 +35,8 @@ export function DashboardMap({
   onDrawComplete,
   tempRule,
   searchedLocation,
-  viewingRule
+  viewingRule,
+  hiddenRuleIds = []
 }: DashboardMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -314,7 +316,7 @@ export function DashboardMap({
       if (selectedTarget?.id === target.id) {
         // Get active rule
         const activeRule = target.rules.find(r => r.id === target.activeRuleId);
-        if (!activeRule || !activeRule.enabled) return;
+        if (!activeRule || (hiddenRuleIds.includes(activeRule.id) && viewingRule?.id !== activeRule.id)) return;
 
         const color = target.status === 'violation' ? '#ef4444' : '#22c55e';
         const shapeOptions = {
@@ -336,7 +338,7 @@ export function DashboardMap({
         }
       }
     });
-  }, [targets, selectedTarget, onTargetClick]);
+  }, [targets, selectedTarget, onTargetClick, hiddenRuleIds, viewingRule]);
 
   // Handle searched location separately
   useEffect(() => {
@@ -393,6 +395,10 @@ export function DashboardMap({
 
     // Add viewing rule shape
     if (viewingRule) {
+      // Don't render with dashed border if it's already rendered as the active rule of the selected target
+      const isActiveAndVisible = selectedTarget?.activeRuleId === viewingRule.id && !hiddenRuleIds.includes(viewingRule.id);
+      if (isActiveAndVisible) return;
+
       const shapeOptions = {
         color: '#16a34a', // green-600
         fillColor: '#16a34a',

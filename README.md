@@ -115,13 +115,16 @@ The **Dashboard** polls the API every 5 seconds. Each device card shows:
 - Child name and device identifier
 - Battery percentage with colour-coded icon
 - "Safe" or "Violation" status badge
-- Active rule name if one is currently enforced
+- Active rule name and type displayed directly in the device card
+- Integrated **View/Hide toggle** on each rule to control map visibility
+- Automatic focus and rendering of the active rule for the selected target
 - Device position pin on the Leaflet map
 
 ### UC-6: View and Manage Rules
 The **Rule Manager** lists all rules grouped by target child. Operators can:
-- Preview a rule's zone on the map (View / Hide)
-- Toggle the enabled state (UI-only, not persisted to backend)
+- Preview a rule's zone on the map (**View / Hide** state synced with Dashboard)
+- **Activate / Deactivate** a rule for a child using a toggle switch
+- Persist manual UI states (activation and visibility) across sessions using `localStorage`
 - Delete a rule (calls `DELETE /api/rules/{id}`)
 
 ### UC-7: Receive Notifications
@@ -314,7 +317,6 @@ The app will be available at **http://localhost:5173**.
 ## Known Limitations
 
 - **No authentication** — The login page bypasses credential checks. Any security is on the honour system.
+- **`toggleRuleEnabled` & `setActiveRule` are Client-side only** — Manually activating or disabling a rule in the UI is persisted in the browser's `localStorage` but does not currently affect the backend's internal evaluation engine. The backend always evaluates the device against all rules defined for that child that fit the current time window.
 - **Rules are time-of-day only (no day-of-week)** — Schedules apply every day; there is no weekly recurrence.
-- **`toggleRuleEnabled` is UI-only** — Disabling a rule in the UI does not persist to the backend. The backend always evaluates all rules whose time window matches `DateTime.UtcNow`.
-- **`setActiveRule` is UI-only** — Manually activating a rule in the Rule Manager panel does not affect backend evaluation.
 - **CORS is locked to localhost:5173** — Deploying the frontend to any other origin requires updating `Program.cs`.

@@ -35,7 +35,6 @@ export default function RuleManager() {
           id: r.id.toString(),
           name: r.name,
           type: r.ruleType === 'Circle' ? 'circle' : 'polygon',
-          enabled: true,
           targetId: apiDevices.find(d => d.childName === r.childName)?.id.toString() || '',
           schedule: {
             startTime: r.startTime.substring(0, 5),
@@ -50,18 +49,25 @@ export default function RuleManager() {
           })
         }));
 
-        // Map the API Devices to the UI format (attaching their specific rules)
-        const mappedTargets: Target[] = apiDevices.map(d => ({
-          id: d.id.toString(),
-          name: d.childName || 'Unknown',
-          deviceId: d.deviceIdentifier,
-          battery: d.batteryPercent,
-          status: d.ruleStatus.isViolatingRule ? 'violation' : 'safe',
-          latitude: d.latitude || 0,
-          longitude: d.longitude || 0,
-          rules: mappedRules.filter(rule => rule.targetId === d.id.toString()),
-          activeRuleId: d.ruleStatus.activeRuleId?.toString() || null
-        }));
+        const activeRulesOverride = JSON.parse(localStorage.getItem('activeRules') || '{}');
+
+        // Map the API Devices to the UI format (attaching their specific rules and applying local overrides)
+        const mappedTargets: Target[] = apiDevices.map(d => {
+          const targetId = d.id.toString();
+          return {
+            id: targetId,
+            name: d.childName || 'Unknown',
+            deviceId: d.deviceIdentifier,
+            battery: d.batteryPercent,
+            status: d.ruleStatus.isViolatingRule ? 'violation' : 'safe',
+            latitude: d.latitude || 0,
+            longitude: d.longitude || 0,
+            rules: mappedRules.filter(rule => rule.targetId === targetId),
+            activeRuleId: activeRulesOverride[targetId] !== undefined 
+              ? activeRulesOverride[targetId] 
+              : (d.ruleStatus.activeRuleId?.toString() || null)
+          };
+        });
 
         setAllRules(mappedRules);
         setTargets(mappedTargets);
@@ -83,7 +89,7 @@ export default function RuleManager() {
   const [targetForRule, setTargetForRule] = useState<string>('');
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('17:00');
-  const [viewingRuleId, setViewingRuleId] = useState<string | null>(null);
+  const [viewingRuleId, setViewingRuleId] = useState<string | null>(() => localStorage.getItem('viewingRuleId'));
 
   const startDrawing = () => {
     if (!targetForRule) {
@@ -176,7 +182,6 @@ export default function RuleManager() {
         id: savedApiRule.id.toString(),
         name: savedApiRule.name,
         type: savedApiRule.ruleType === 'Circle' ? 'circle' : 'polygon',
-        enabled: true,
         targetId: targetForRule,
         schedule: {
           startTime: savedApiRule.startTime.substring(0, 5),
@@ -228,30 +233,20 @@ export default function RuleManager() {
     setTempRule(null);
   };
 
-  const toggleRuleEnabled = (ruleId: string) => {
-    setAllRules(prev => prev.map(r => {
-      if (r.id === ruleId) {
-        return { ...r, enabled: !r.enabled };
-      }
-      return r;
-    }));
 
-    setTargets(prev => prev.map(t => ({
-      ...t,
-      rules: t.rules.map(r => r.id === ruleId ? { ...r, enabled: !r.enabled } : r)
-    })));
-
-    toast.success('Rule status updated');
-  };
-
-  const setActiveRule = (targetId: string, ruleId: string) => {
+  const setActiveRule = (targetId: string, ruleId: string | null) => {
     setTargets(prev => prev.map(t => {
       if (t.id === targetId) {
+        // Persist to localStorage
+        const activeRules = JSON.parse(localStorage.getItem('activeRules') || '{}');
+        activeRules[targetId] = ruleId;
+        localStorage.setItem('activeRules', JSON.stringify(activeRules));
+        
         return { ...t, activeRuleId: ruleId };
       }
       return t;
     }));
-    toast.success('Active rule changed');
+    toast.success(ruleId ? 'Active rule changed' : 'Rule deactivated');
   };
 
 const deleteRule = async (ruleId: string) => {
@@ -269,6 +264,20 @@ const deleteRule = async (ruleId: string) => {
 
       if (viewingRuleId === ruleId) {
         setViewingRuleId(null);
+        localStorage.removeItem('viewingRuleId');
+      }
+
+      // Cleanup localStorage active rules
+      const activeRules = JSON.parse(localStorage.getItem('activeRules') || '{}');
+      let changed = false;
+      for (const targetId in activeRules) {
+        if (activeRules[targetId] === ruleId) {
+          activeRules[targetId] = null;
+          changed = true;
+        }
+      }
+      if (changed) {
+        localStorage.setItem('activeRules', JSON.stringify(activeRules));
       }
 
       toast.success('Rule deleted successfully');
@@ -279,10 +288,12 @@ const deleteRule = async (ruleId: string) => {
   };
 
   const toggleViewRule = (ruleId: string) => {
-    if (viewingRuleId === ruleId) {
-      setViewingRuleId(null);
+    const newId = viewingRuleId === ruleId ? null : ruleId;
+    setViewingRuleId(newId);
+    if (newId) {
+      localStorage.setItem('viewingRuleId', newId);
     } else {
-      setViewingRuleId(ruleId);
+      localStorage.removeItem('viewingRuleId');
     }
   };
 
@@ -536,16 +547,16 @@ const deleteRule = async (ruleId: string) => {
                           </div>
 
                           <div className="flex items-center gap-2 mt-3 pt-2 border-t border-gray-100">
-                            {/* Enable/Disable Toggle */}
+                            {/* Active/Deactivate Switch */}
                             <div className="flex items-center gap-2">
                               <Switch
-                                checked={rule.enabled}
-                                onCheckedChange={() => toggleRuleEnabled(rule.id)}
+                                checked={rule.id === target.activeRuleId}
+                                onCheckedChange={(checked) => setActiveRule(target.id, checked ? rule.id : null)}
                               />
                               <span className={`text-xs font-medium whitespace-nowrap ${
-                                rule.enabled ? 'text-green-600' : 'text-gray-400'
+                                rule.id === target.activeRuleId ? 'text-blue-600' : 'text-gray-400'
                               }`}>
-                                {rule.enabled ? 'Enabled' : 'Disabled'}
+                                {rule.id === target.activeRuleId ? 'Deactivate' : 'Activate'}
                               </span>
                             </div>
 
@@ -568,19 +579,6 @@ const deleteRule = async (ruleId: string) => {
                                   <><Eye className="w-3 h-3 mr-1" />View</>
                                 )}
                               </Button>
-
-                              {/* Set Active Button */}
-                              {rule.id !== target.activeRuleId && rule.enabled && (
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => setActiveRule(target.id, rule.id)}
-                                  className="text-xs h-7 px-2 whitespace-nowrap"
-                                >
-                                  <Play className="w-3 h-3 mr-1" />
-                                  Activate
-                                </Button>
-                              )}
 
                               {/* Delete Button */}
                               <Button

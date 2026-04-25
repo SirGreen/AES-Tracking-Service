@@ -3,17 +3,56 @@ import { Card } from '../components/ui/card';
 import { Input } from '../components/ui/input';
 import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
+import { Slider } from '../components/ui/slider';
 import { 
   MapPin, 
   Battery, 
   Loader2, 
   Save, 
   RefreshCw,
-  AlertCircle
+  AlertCircle,
+  Map as MapIcon
 } from 'lucide-react';
 import { ApiDeviceResponse } from '../types';
 import { toast } from 'sonner';
 import { getDevices, updateDeviceLocation } from '../api/trackingApi';
+import { MapContainer, TileLayer, Marker, useMapEvents } from 'react-leaflet';
+import L from 'leaflet';
+
+// Fix for default marker icon in Leaflet
+import markerIcon from 'leaflet/dist/images/marker-icon.png';
+import markerShadow from 'leaflet/dist/images/marker-shadow.png';
+
+const DefaultIcon = L.icon({
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41]
+});
+
+L.Marker.prototype.options.icon = DefaultIcon;
+
+function MapEvents({ onLocationSelect }: { onLocationSelect: (lat: number, lng: number) => void }) {
+  useMapEvents({
+    click(e) {
+      onLocationSelect(e.latlng.lat, e.latlng.lng);
+    },
+  });
+  return null;
+}
+
+function MapUpdater({ lat, lng, deviceId }: { lat: number; lng: number; deviceId: number | null }) {
+  const map = useMapEvents({});
+  
+  // Only re-center when deviceId changes (e.g. user selects a different device from the list)
+  useEffect(() => {
+    if (lat && lng) {
+      map.setView([lat, lng], 15);
+    }
+  }, [deviceId, map]); // Removed lat/lng from dependencies to prevent snapping on map click
+  
+  return null;
+}
 
 export default function DebugPage() {
   const [devices, setDevices] = useState<ApiDeviceResponse[]>([]);
@@ -144,32 +183,60 @@ export default function DebugPage() {
               </h2>
 
               <div className="space-y-6">
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
                     <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-gray-400" />
-                      Latitude
+                      <MapIcon className="w-4 h-4 text-gray-400" />
+                      Location Selection
                     </label>
-                    <Input
-                      type="number"
-                      step="any"
-                      value={lat}
-                      onChange={(e) => setLat(e.target.value)}
-                      placeholder="e.g. 10.7626"
-                    />
+                    <span className="text-[10px] text-gray-400">Click on the map to set coordinates</span>
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-sm font-medium text-gray-700 flex items-center gap-2">
-                      <MapPin className="w-4 h-4 text-gray-400" />
-                      Longitude
-                    </label>
-                    <Input
-                      type="number"
-                      step="any"
-                      value={lng}
-                      onChange={(e) => setLng(e.target.value)}
-                      placeholder="e.g. 106.6602"
-                    />
+                  
+                  <div className="h-64 w-full rounded-xl overflow-hidden border border-gray-200 relative z-0">
+                    <MapContainer 
+                      center={[parseFloat(lat) || 10.7626, parseFloat(lng) || 106.6602]} 
+                      zoom={15} 
+                      style={{ height: '100%', width: '100%' }}
+                      scrollWheelZoom={true}
+                    >
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      <MapEvents onLocationSelect={(newLat, newLng) => {
+                        setLat(newLat.toFixed(6));
+                        setLng(newLng.toFixed(6));
+                      }} />
+                      <MapUpdater lat={parseFloat(lat)} lng={parseFloat(lng)} deviceId={selectedDeviceId} />
+                      {parseFloat(lat) && parseFloat(lng) && (
+                        <Marker position={[parseFloat(lat), parseFloat(lng)]} />
+                      )}
+                    </MapContainer>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-gray-500">Latitude</label>
+                      <Input
+                        type="number"
+                        step="any"
+                        value={lat}
+                        onChange={(e) => setLat(e.target.value)}
+                        placeholder="e.g. 10.7626"
+                        className="h-10"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-xs font-medium text-gray-500">Longitude</label>
+                      <Input
+                        type="number"
+                        step="any"
+                        value={lng}
+                        onChange={(e) => setLng(e.target.value)}
+                        placeholder="e.g. 106.6602"
+                        className="h-10"
+                      />
+                    </div>
                   </div>
                 </div>
 
@@ -178,16 +245,15 @@ export default function DebugPage() {
                     <Battery className="w-4 h-4 text-gray-400" />
                     Battery Percentage
                   </label>
-                  <div className="flex items-center gap-4">
-                    <Input
-                      type="range"
-                      min="0"
-                      max="100"
-                      value={battery}
-                      onChange={(e) => setBattery(e.target.value)}
-                      className="flex-1"
+                  <div className="flex items-center gap-4 py-2">
+                    <Slider
+                      value={[parseInt(battery) || 0]}
+                      onValueChange={(vals) => setBattery(vals[0].toString())}
+                      max={100}
+                      step={1}
+                      className="flex-1 [&_[data-slot=slider-range]]:bg-[#2563eb] [&_[data-slot=slider-thumb]]:border-[#2563eb]"
                     />
-                    <span className="w-12 text-center font-mono font-bold text-[#2563eb] bg-blue-50 px-2 py-1 rounded">
+                    <span className="w-14 text-center font-mono font-bold text-[#2563eb] bg-blue-50 px-2 py-1 rounded-lg border border-blue-100">
                       {battery}%
                     </span>
                   </div>

@@ -13,8 +13,7 @@ interface DashboardMapProps {
   onDrawComplete?: (rule: Partial<Rule>) => void;
   tempRule?: Partial<Rule> | null;
   searchedLocation?: { lat: number; lng: number; name: string } | null;
-  viewingRule?: Rule | null;
-  hiddenRuleIds?: string[];
+  viewingRules?: Rule[];
 }
 
 const createCustomIcon = (status: 'safe' | 'violation') => {
@@ -35,8 +34,7 @@ export function DashboardMap({
   onDrawComplete,
   tempRule,
   searchedLocation,
-  viewingRule,
-  hiddenRuleIds = []
+  viewingRules = []
 }: DashboardMapProps) {
   const mapRef = useRef<L.Map | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -47,6 +45,7 @@ export function DashboardMap({
   const polygonPointsRef = useRef<L.LatLng[]>([]);
   const onDrawCompleteRef = useRef(onDrawComplete);
   const searchMarkerRef = useRef<L.Marker | null>(null);
+  const selectedShapeSignatureRef = useRef<string>('');
 
   // Keep onDrawComplete ref up to date
   useEffect(() => {
@@ -268,34 +267,24 @@ export function DashboardMap({
     }
   }, [drawMode]);
 
-  // Update markers and shapes for targets (separate from search location)
+  // Update target markers only (separate from rule boundary rendering).
   useEffect(() => {
     if (!mapRef.current) return;
 
     const map = mapRef.current;
 
-    // Clear existing markers and shapes
-    markersRef.current.forEach(marker => marker.remove());
-    shapesRef.current.forEach(shape => shape.remove());
-    markersRef.current.clear();
-    shapesRef.current.clear();
+    const incomingIds = new Set(targets.map(target => target.id));
 
-    // Add markers for all targets
-    targets.forEach(target => {
-      const marker = L.marker([target.latitude, target.longitude], {
-        icon: createCustomIcon(target.status as 'safe' | 'violation')
-      }).addTo(map);
+    // Remove markers that no longer exist.
+    markersRef.current.forEach((marker, targetId) => {
+      if (!incomingIds.has(targetId)) {
+        marker.remove();
+        markersRef.current.delete(targetId);
+      }
+    });
 
-      // Add permanent tooltip with target name
-      marker.bindTooltip(target.name, {
-        permanent: true,
-        direction: 'top',
-        offset: [0, -10],
-        className: 'target-label',
-        opacity: 0.9
-      });
-
-      marker.bindPopup(`
+    targets.forEach((target) => {
+      const popupHtml = `
         <div class="p-2">
           <h3 class="font-semibold mb-1">${target.name}</h3>
           <p class="text-sm text-gray-600 mb-1">${target.deviceId}</p>
@@ -306,39 +295,97 @@ export function DashboardMap({
           </p>
           <p class="text-sm">Battery: ${target.battery}%</p>
         </div>
-      `);
+      `;
 
-      marker.on('click', () => onTargetClick(target));
+      const existingMarker = markersRef.current.get(target.id);
 
-      markersRef.current.set(target.id, marker);
+      if (existingMarker) {
+        existingMarker.setLatLng([target.latitude, target.longitude]);
+        existingMarker.setIcon(createCustomIcon(target.status as 'safe' | 'violation'));
+        existingMarker.setPopupContent(popupHtml);
+      } else {
+        const marker = L.marker([target.latitude, target.longitude], {
+          icon: createCustomIcon(target.status as 'safe' | 'violation')
+        }).addTo(map);
 
-      // Add shape for selected target
-      if (selectedTarget?.id === target.id) {
-        // Get active rule
-        const activeRule = target.rules.find(r => r.id === target.activeRuleId);
-        if (!activeRule || (hiddenRuleIds.includes(activeRule.id) && viewingRule?.id !== activeRule.id)) return;
+        marker.bindTooltip(target.name, {
+          permanent: true,
+          direction: 'top',
+          offset: [0, -10],
+          className: 'target-label',
+          opacity: 0.9
+        });
 
-        const color = target.status === 'violation' ? '#ef4444' : '#22c55e';
-        const shapeOptions = {
-          color: color,
-          fillColor: color,
-          fillOpacity: 0.2,
-          weight: 2,
-        };
+        marker.bindPopup(popupHtml);
+        marker.on('click', () => onTargetClick(target));
 
-        if (activeRule.type === 'polygon' && activeRule.area) {
-          const polygon = L.polygon(activeRule.area as L.LatLngExpression[], shapeOptions).addTo(map);
-          shapesRef.current.set(`shape-${target.id}`, polygon);
-        } else if (activeRule.type === 'circle' && activeRule.center && activeRule.radius) {
-          const circle = L.circle(activeRule.center as L.LatLngExpression, {
-            ...shapeOptions,
-            radius: activeRule.radius,
-          }).addTo(map);
-          shapesRef.current.set(`shape-${target.id}`, circle);
-        }
+        markersRef.current.set(target.id, marker);
       }
     });
-  }, [targets, selectedTarget, onTargetClick, hiddenRuleIds, viewingRule]);
+  }, [targets, onTargetClick]);
+
+  // Render selected target's active rule boundary with stable redraw rules.
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const map = mapRef.current;
+    const selectedShapeKey = 'selected-active-rule';
+
+    if (!selectedTarget?.id) {
+      shapesRef.current.get(selectedShapeKey)?.remove();
+      shapesRef.current.delete(selectedShapeKey);
+      selectedShapeSignatureRef.current = '';
+      return;
+    }
+
+    const selectedFromTargets = targets.find((target) => target.id === selectedTarget.id);
+    if (!selectedFromTargets) {
+      shapesRef.current.get(selectedShapeKey)?.remove();
+      shapesRef.current.delete(selectedShapeKey);
+      selectedShapeSignatureRef.current = '';
+      return;
+    }
+
+    const activeRule = selectedFromTargets.rules.find((rule) => rule.id === selectedFromTargets.activeRuleId);
+    if (!activeRule) {
+      shapesRef.current.get(selectedShapeKey)?.remove();
+      shapesRef.current.delete(selectedShapeKey);
+      selectedShapeSignatureRef.current = '';
+      return;
+    }
+
+    const geometrySignature = activeRule.type === 'circle'
+      ? `${activeRule.center?.[0] ?? ''},${activeRule.center?.[1] ?? ''},${activeRule.radius ?? ''}`
+      : JSON.stringify(activeRule.area ?? []);
+
+    const nextSignature = `${selectedFromTargets.id}|${selectedFromTargets.status}|${activeRule.id}|${activeRule.type}|${geometrySignature}`;
+    if (nextSignature === selectedShapeSignatureRef.current) {
+      return;
+    }
+
+    shapesRef.current.get(selectedShapeKey)?.remove();
+
+    const color = selectedFromTargets.status === 'violation' ? '#ef4444' : '#22c55e';
+    const shapeOptions = {
+      color,
+      fillColor: color,
+      fillOpacity: 0.2,
+      weight: 2,
+    };
+
+    if (activeRule.type === 'polygon' && activeRule.area) {
+      const polygon = L.polygon(activeRule.area as L.LatLngExpression[], shapeOptions).addTo(map);
+      shapesRef.current.set(selectedShapeKey, polygon);
+    } else if (activeRule.type === 'circle' && activeRule.center && activeRule.radius) {
+      const circle = L.circle(activeRule.center as L.LatLngExpression, {
+        ...shapeOptions,
+        radius: activeRule.radius,
+      }).addTo(map);
+      shapesRef.current.set(selectedShapeKey, circle);
+    }
+
+    selectedShapeSignatureRef.current = nextSignature;
+  }, [targets, selectedTarget?.id]);
 
   // Handle searched location separately
   useEffect(() => {
@@ -381,26 +428,27 @@ export function DashboardMap({
     }
   }, [searchedLocation]);
 
-  // Display viewingRule on map
+  // Display selected viewing rules on map.
   useEffect(() => {
     if (!mapRef.current) return;
 
     const map = mapRef.current;
 
-    // Remove previous viewing shape
-    if (shapesRef.current.has('viewing-rule')) {
-      shapesRef.current.get('viewing-rule')?.remove();
-      shapesRef.current.delete('viewing-rule');
-    }
+    Array.from(shapesRef.current.keys())
+      .filter((key) => key.startsWith('viewing-rule-'))
+      .forEach((key) => {
+        shapesRef.current.get(key)?.remove();
+        shapesRef.current.delete(key);
+      });
 
-    // Add viewing rule shape
-    if (viewingRule) {
-      // Don't render with dashed border if it's already rendered as the active rule of the selected target
-      const isActiveAndVisible = selectedTarget?.activeRuleId === viewingRule.id && !hiddenRuleIds.includes(viewingRule.id);
-      if (isActiveAndVisible) return;
+    viewingRules.forEach((viewingRule) => {
+      // Avoid duplicate overlays when the selected target already renders this rule as active.
+      if (selectedTarget?.activeRuleId === viewingRule.id) {
+        return;
+      }
 
       const shapeOptions = {
-        color: '#16a34a', // green-600
+        color: '#16a34a',
         fillColor: '#16a34a',
         fillOpacity: 0.3,
         weight: 3,
@@ -409,7 +457,7 @@ export function DashboardMap({
 
       if (viewingRule.type === 'polygon' && viewingRule.area) {
         const polygon = L.polygon(viewingRule.area as L.LatLngExpression[], shapeOptions).addTo(map);
-        
+
         polygon.bindPopup(`
           <div class="p-2">
             <div class="flex items-center gap-2 mb-2">
@@ -420,17 +468,14 @@ export function DashboardMap({
             <p class="text-xs text-gray-600 mt-1">⏰ ${formatScheduleTime(viewingRule.schedule)}</p>
           </div>
         `);
-        
-        shapesRef.current.set('viewing-rule', polygon);
-        
-        // Fit map to polygon bounds
-        map.fitBounds(polygon.getBounds(), { padding: [50, 50] });
+
+        shapesRef.current.set(`viewing-rule-${viewingRule.id}`, polygon);
       } else if (viewingRule.type === 'circle' && viewingRule.center && viewingRule.radius) {
         const circle = L.circle(viewingRule.center as L.LatLngExpression, {
           ...shapeOptions,
           radius: viewingRule.radius,
         }).addTo(map);
-        
+
         circle.bindPopup(`
           <div class="p-2">
             <div class="flex items-center gap-2 mb-2">
@@ -442,14 +487,11 @@ export function DashboardMap({
             <p class="text-xs text-gray-600">⏰ ${formatScheduleTime(viewingRule.schedule)}</p>
           </div>
         `);
-        
-        shapesRef.current.set('viewing-rule', circle);
-        
-        // Fit map to circle bounds
-        map.fitBounds(circle.getBounds(), { padding: [50, 50] });
+
+        shapesRef.current.set(`viewing-rule-${viewingRule.id}`, circle);
       }
-    }
-  }, [viewingRule]);
+    });
+  }, [viewingRules, selectedTarget?.activeRuleId]);
 
   // Auto-pan map to the selected target when its location changes
   useEffect(() => {
@@ -465,11 +507,11 @@ export function DashboardMap({
         15, // Zoom level
         {
           animate: true,
-          duration: 1.5 // Animation speed in seconds
+          duration: 0.1 // Animation speed in seconds
         }
       );
     }
-  }, [selectedTarget?.id, selectedTarget?.latitude, selectedTarget?.longitude]);
+  }, [selectedTarget?.id]);
 
   return <div ref={containerRef} className="h-full w-full" />;
 }

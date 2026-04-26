@@ -20,15 +20,6 @@ export default function RuleManager() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [allRules, setAllRules] = useState<Rule[]>([]);
 
-  const normalizeTimeInput = (value: string): string => {
-    const digits = value.replace(/\D/g, '').slice(0, 4);
-    if (digits.length <= 2) {
-      return digits;
-    }
-
-    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
-  };
-
   const isValid24HourTime = (value: string): boolean => /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
 
   // Fetch live devices and rules from the .NET backend
@@ -100,7 +91,76 @@ export default function RuleManager() {
   const [targetForRule, setTargetForRule] = useState<string>('');
   const [startTime, setStartTime] = useState('08:00');
   const [endTime, setEndTime] = useState('17:00');
-  const [viewingRuleId, setViewingRuleId] = useState<string | null>(() => localStorage.getItem('viewingRuleId'));
+  const hourOptions = Array.from({ length: 24 }, (_, i) => i.toString().padStart(2, '0'));
+  const minuteOptions = Array.from({ length: 60 }, (_, i) => i.toString().padStart(2, '0'));
+
+  const updateTimePart = (
+    current: string,
+    part: 'hour' | 'minute',
+    value: string
+  ): string => {
+    const [hour = '00', minute = '00'] = current.split(':');
+    return part === 'hour' ? `${value}:${minute}` : `${hour}:${value}`;
+  };
+
+  const startHour = startTime.split(':')[0] || '08';
+  const startMinute = startTime.split(':')[1] || '00';
+  const endHour = endTime.split(':')[0] || '17';
+  const endMinute = endTime.split(':')[1] || '00';
+
+  const schedulePresets = [
+    { label: 'Morning', start: '06:00', end: '12:00' },
+    { label: 'School Time', start: '07:00', end: '16:00' },
+    { label: 'Day Shift', start: '08:00', end: '17:00' },
+    { label: 'After School', start: '16:00', end: '21:00' },
+    { label: 'Night', start: '21:00', end: '06:00' },
+    { label: 'All Day', start: '00:00', end: '23:59' },
+  ] as const;
+
+  const getScheduleDurationLabel = (start: string, end: string): string => {
+    if (!isValid24HourTime(start) || !isValid24HourTime(end)) {
+      return 'Invalid time range';
+    }
+
+    const [startHour, startMinute] = start.split(':').map(Number);
+    const [endHour, endMinute] = end.split(':').map(Number);
+    const startTotalMinutes = startHour * 60 + startMinute;
+    const endTotalMinutes = endHour * 60 + endMinute;
+
+    let diffMinutes = endTotalMinutes - startTotalMinutes;
+    if (diffMinutes <= 0) {
+      diffMinutes += 24 * 60;
+    }
+
+    const hours = Math.floor(diffMinutes / 60);
+    const minutes = diffMinutes % 60;
+
+    if (hours === 0) {
+      return `${minutes}m`;
+    }
+
+    if (minutes === 0) {
+      return `${hours}h`;
+    }
+
+    return `${hours}h ${minutes}m`;
+  };
+  const [viewingRuleIds, setViewingRuleIds] = useState<string[]>(() => {
+    const saved = localStorage.getItem('viewingRuleIds');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed;
+        }
+      } catch {
+        // Ignore malformed local storage payloads.
+      }
+    }
+
+    const legacySingle = localStorage.getItem('viewingRuleId');
+    return legacySingle ? [legacySingle] : [];
+  });
 
   const validateTimeInputs = (): boolean => {
     if (!isValid24HourTime(startTime) || !isValid24HourTime(endTime)) {
@@ -295,10 +355,11 @@ const deleteRule = async (ruleId: string) => {
         activeRuleId: t.activeRuleId === ruleId ? null : t.activeRuleId
       })));
 
-      if (viewingRuleId === ruleId) {
-        setViewingRuleId(null);
-        localStorage.removeItem('viewingRuleId');
-      }
+      setViewingRuleIds(prev => {
+        const next = prev.filter(id => id !== ruleId);
+        localStorage.setItem('viewingRuleIds', JSON.stringify(next));
+        return next;
+      });
 
       // Cleanup localStorage active rules
       const activeRules = JSON.parse(localStorage.getItem('activeRules') || '{}');
@@ -321,17 +382,18 @@ const deleteRule = async (ruleId: string) => {
   };
 
   const toggleViewRule = (ruleId: string) => {
-    const newId = viewingRuleId === ruleId ? null : ruleId;
-    setViewingRuleId(newId);
-    if (newId) {
-      localStorage.setItem('viewingRuleId', newId);
-    } else {
-      localStorage.removeItem('viewingRuleId');
-    }
+    setViewingRuleIds(prev => {
+      const next = prev.includes(ruleId)
+        ? prev.filter(id => id !== ruleId)
+        : [...prev, ruleId];
+
+      localStorage.setItem('viewingRuleIds', JSON.stringify(next));
+      return next;
+    });
   };
 
   const selectedTarget = targets.find(t => t.id === targetForRule);
-  const viewingRule = viewingRuleId ? allRules.find(r => r.id === viewingRuleId) : null;
+  const viewingRules = allRules.filter(r => viewingRuleIds.includes(r.id));
 
   return (
     <div className="h-full flex gap-6 p-6">
@@ -383,37 +445,113 @@ const deleteRule = async (ruleId: string) => {
                 <label className="text-sm font-semibold text-[#2563eb]">Time Schedule (Required)</label>
               </div>
 
-              <div className="space-y-2">
-                <div>
-                  <label className="block text-xs text-gray-700 mb-1 font-medium">Start Time</label>
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="^([01]\\d|2[0-3]):([0-5]\\d)$"
-                    placeholder="HH:mm"
-                    maxLength={5}
-                    value={startTime}
-                    onChange={(e) => setStartTime(normalizeTimeInput(e.target.value))}
-                    className="bg-white"
-                  />
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1 font-medium">Start</label>
+                    <div className="flex items-center gap-1">
+                      <Select
+                        value={startHour}
+                        onValueChange={(value) => setStartTime(updateTimePart(startTime, 'hour', value))}
+                      >
+                        <SelectTrigger className="bg-white">
+                          <SelectValue placeholder="HH" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {hourOptions.map((hour) => (
+                            <SelectItem key={`start-hour-${hour}`} value={hour}>
+                              {hour}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-sm text-gray-500">:</span>
+                      <Select
+                        value={startMinute}
+                        onValueChange={(value) => setStartTime(updateTimePart(startTime, 'minute', value))}
+                      >
+                        <SelectTrigger className="bg-white">
+                          <SelectValue placeholder="mm" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {minuteOptions.map((minute) => (
+                            <SelectItem key={`start-minute-${minute}`} value={minute}>
+                              {minute}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-700 mb-1 font-medium">End</label>
+                    <div className="flex items-center gap-1">
+                      <Select
+                        value={endHour}
+                        onValueChange={(value) => setEndTime(updateTimePart(endTime, 'hour', value))}
+                      >
+                        <SelectTrigger className="bg-white">
+                          <SelectValue placeholder="HH" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {hourOptions.map((hour) => (
+                            <SelectItem key={`end-hour-${hour}`} value={hour}>
+                              {hour}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <span className="text-sm text-gray-500">:</span>
+                      <Select
+                        value={endMinute}
+                        onValueChange={(value) => setEndTime(updateTimePart(endTime, 'minute', value))}
+                      >
+                        <SelectTrigger className="bg-white">
+                          <SelectValue placeholder="mm" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {minuteOptions.map((minute) => (
+                            <SelectItem key={`end-minute-${minute}`} value={minute}>
+                              {minute}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs text-gray-700 mb-1 font-medium">End Time</label>
-                  <Input
-                    type="text"
-                    inputMode="numeric"
-                    pattern="^([01]\\d|2[0-3]):([0-5]\\d)$"
-                    placeholder="HH:mm"
-                    maxLength={5}
-                    value={endTime}
-                    onChange={(e) => setEndTime(normalizeTimeInput(e.target.value))}
-                    className="bg-white"
-                  />
+
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                  {schedulePresets.map((preset) => {
+                    const isSelected = startTime === preset.start && endTime === preset.end;
+                    return (
+                      <Button
+                        key={preset.label}
+                        type="button"
+                        size="sm"
+                        variant={isSelected ? 'default' : 'outline'}
+                        onClick={() => {
+                          setStartTime(preset.start);
+                          setEndTime(preset.end);
+                        }}
+                        className={`text-xs h-8 ${
+                          isSelected ? 'bg-[#2563eb] hover:bg-[#1d4ed8]' : 'bg-white'
+                        }`}
+                      >
+                        {preset.label}
+                      </Button>
+                    );
+                  })}
                 </div>
-                <p className="text-xs text-gray-600 mt-2">
-                  💡 Active from {startTime} to {endTime} (24-hour HH:mm)
-                  {startTime > endTime && ' (overnight)'}
-                </p>
+
+                <div className="rounded-md border border-blue-100 bg-white px-3 py-2 text-xs text-gray-700">
+                  <p>
+                    Active from <span className="font-semibold text-[#2563eb]">{startTime}</span> to{' '}
+                    <span className="font-semibold text-[#2563eb]">{endTime}</span>
+                    {startTime > endTime ? ' (overnight)' : ''}
+                  </p>
+                  <p className="mt-1 text-gray-600">Duration: {getScheduleDurationLabel(startTime, endTime)}</p>
+                </div>
               </div>
             </div>
 
@@ -552,7 +690,7 @@ const deleteRule = async (ruleId: string) => {
                           className={`p-3 border rounded-lg bg-white transition-all ${
                             rule.id === target.activeRuleId
                               ? 'border-[#2563eb] shadow-sm'
-                              : viewingRuleId === rule.id
+                              : viewingRuleIds.includes(rule.id)
                               ? 'border-green-500 shadow-sm'
                               : 'border-gray-200'
                           }`}
@@ -566,7 +704,7 @@ const deleteRule = async (ruleId: string) => {
                                     ACTIVE
                                   </span>
                                 )}
-                                {viewingRuleId === rule.id && (
+                                {viewingRuleIds.includes(rule.id) && (
                                   <span className="px-2 py-0.5 bg-green-600 text-white text-xs rounded font-medium">
                                     VIEWING
                                   </span>
@@ -606,15 +744,15 @@ const deleteRule = async (ruleId: string) => {
                               {/* View on Map Button */}
                               <Button
                                 size="sm"
-                                variant={viewingRuleId === rule.id ? 'default' : 'outline'}
+                                variant={viewingRuleIds.includes(rule.id) ? 'default' : 'outline'}
                                 onClick={() => toggleViewRule(rule.id)}
                                 className={`text-xs h-7 px-2 ${
-                                  viewingRuleId === rule.id 
+                                  viewingRuleIds.includes(rule.id)
                                     ? 'bg-green-600 hover:bg-green-700 text-white' 
                                     : ''
                                 }`}
                               >
-                                {viewingRuleId === rule.id ? (
+                                {viewingRuleIds.includes(rule.id) ? (
                                   <><EyeOff className="w-3 h-3 mr-1" />Hide</>
                                 ) : (
                                   <><Eye className="w-3 h-3 mr-1" />View</>
@@ -654,7 +792,7 @@ const deleteRule = async (ruleId: string) => {
             drawMode={drawMode}
             onDrawComplete={handleDrawComplete}
             tempRule={tempRule}
-            viewingRule={viewingRule}
+            viewingRules={viewingRules}
           />
         </Card>
       </div>

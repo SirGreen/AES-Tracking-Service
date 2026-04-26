@@ -9,18 +9,34 @@ Note: This is a code bundle for Children's Location Monitoring UI. The original 
 
 ## 📖 Table of Contents
 
-1. [Overview](#overview)
-2. [System Architecture](#system-architecture)
-3. [Use Cases](#use-cases)
-4. [Tech Stack](#tech-stack)
-5. [Project Structure](#project-structure)
-6. [Getting Started](#getting-started)
-   - [Prerequisites](#prerequisites)
-   - [Running the Backend (.NET API)](#running-the-backend-net-api)
-   - [Running the Frontend (React)](#running-the-frontend-react)
-7. [API Reference](#api-reference)
-8. [Key Design Decisions](#key-design-decisions)
-9. [Known Limitations](#known-limitations)
+- [CLMS — Children's Location Monitoring System](#clms--childrens-location-monitoring-system)
+  - [📖 Table of Contents](#-table-of-contents)
+  - [Overview](#overview)
+  - [System Architecture](#system-architecture)
+    - [Data Model](#data-model)
+  - [Use Cases](#use-cases)
+    - [UC-1: Register a New Tracking Device](#uc-1-register-a-new-tracking-device)
+    - [UC-2: Pair a Device to a Child](#uc-2-pair-a-device-to-a-child)
+    - [UC-3: Push a Location Update](#uc-3-push-a-location-update)
+    - [UC-4: Create a Geofence Rule](#uc-4-create-a-geofence-rule)
+    - [UC-5: Monitor the Dashboard](#uc-5-monitor-the-dashboard)
+    - [UC-6: View and Manage Rules](#uc-6-view-and-manage-rules)
+    - [UC-7: Receive Notifications](#uc-7-receive-notifications)
+    - [UC-8: Simulate Device Movement and Battery (Debug)](#uc-8-simulate-device-movement-and-battery-debug)
+  - [Tech Stack](#tech-stack)
+    - [Backend](#backend)
+    - [Frontend](#frontend)
+  - [Project Structure](#project-structure)
+  - [Getting Started](#getting-started)
+    - [Prerequisites](#prerequisites)
+    - [Running the Backend (.NET API)](#running-the-backend-net-api)
+    - [Running the Frontend (React)](#running-the-frontend-react)
+    - [Quick-Start Workflow](#quick-start-workflow)
+  - [API Reference](#api-reference)
+    - [Devices](#devices)
+    - [Rules](#rules)
+  - [Key Design Decisions](#key-design-decisions)
+  - [Known Limitations](#known-limitations)
 
 ---
 
@@ -108,21 +124,21 @@ An IoT device (or simulated client) calls `PATCH /api/devices/{id}/location` wit
 A parent draws a zone on the map in the **Rule Manager** page:
 - **Circle rule** — selects a center point and radius (50 – 5000 m).
 - **Polygon rule** — draws at least 3 vertices on the map.
-- Sets a time window (e.g., 08:00 – 17:00). The backend validates there is no overlapping rule for the same child in that time range.
+- Sets a time window (e.g., 08:00 – 17:00) using a dedicated time picker with presets and duration preview. The backend validates there is no overlapping rule for the same child in that time range.
 
 ### UC-5: Monitor the Dashboard
-The **Dashboard** polls the API every 5 seconds. Each device card shows:
+The **Dashboard** polls the API every 1 second. Each device card shows:
 - Child name and device identifier
 - Battery percentage with colour-coded icon
 - "Safe" or "Violation" status badge
 - Active rule name and type displayed directly in the device card
-- Integrated **View/Hide toggle** on each rule to control map visibility
 - Automatic focus and rendering of the active rule for the selected target
+- Stable boundary rendering while the map navigates to the selected target
 - Device position pin on the Leaflet map
 
 ### UC-6: View and Manage Rules
 The **Rule Manager** lists all rules grouped by target child. Operators can:
-- Preview a rule's zone on the map (**View / Hide** state synced with Dashboard)
+- Preview one or many rules' zones on the map at the same time (**multi-select View / Hide**)
 - **Activate / Deactivate** a rule for a child using a toggle switch
 - Persist manual UI states (activation and visibility) across sessions using `localStorage`
 - Delete a rule (calls `DELETE /api/rules/{id}`)
@@ -199,7 +215,7 @@ AES-Tracking-Service/
         │   └── trackingApi.ts   # fetch wrappers for the .NET API
         ├── pages/
         │   ├── Login.tsx
-        │   ├── Dashboard.tsx    # Live map + device list (polls every 5s)
+        │   ├── Dashboard.tsx    # Live map + device list (polls every 1s)
         │   ├── RuleManager.tsx  # Rule creation + management
         │   ├── PairDevice.tsx   # Device pairing and management
         │   ├── Notifications.tsx # Alert centre (real-time derived)
@@ -318,5 +334,6 @@ The app will be available at **http://localhost:5173**.
 
 - **No authentication** — The login page bypasses credential checks. Any security is on the honour system.
 - **`toggleRuleEnabled` & `setActiveRule` are Client-side only** — Manually activating or disabling a rule in the UI is persisted in the browser's `localStorage` but does not currently affect the backend's internal evaluation engine. The backend always evaluates the device against all rules defined for that child that fit the current time window.
+- **Rule visibility state is Client-side only** — View/Hide selections in Rule Manager are stored in `localStorage` for UI convenience and are not synchronized to the backend.
 - **Rules are time-of-day only (no day-of-week)** — Schedules apply every day; there is no weekly recurrence.
 - **CORS is locked to localhost:5173** — Deploying the frontend to any other origin requires updating `Program.cs`.

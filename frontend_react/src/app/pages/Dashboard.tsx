@@ -1,13 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router';
 import { Icon } from 'leaflet';
 import { Card } from '../components/ui/card';
 import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
-import { Battery, BatteryLow, BatteryWarning, Plus, Search, MapPin, Eye, EyeOff } from 'lucide-react';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { mockTargets } from '../data/mockData';
+import { Battery, BatteryLow, BatteryWarning, Plus, Search, MapPin } from 'lucide-react';
 import { Target, Rule } from '../types';
 import { DashboardMap } from '../components/DashboardMap';
 import { updateAllTargetsStatus } from '../utils/geofencing';
@@ -37,10 +35,6 @@ export default function Dashboard() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isSearching, setIsSearching] = useState(false);
   const [searchedLocation, setSearchedLocation] = useState<{ lat: number; lng: number; name: string } | null>(null);
-  const [viewingRule, setViewingRule] = useState<Rule | null>(null);
-  const [hiddenRuleIds, setHiddenRuleIds] = useState<string[]>(() => {
-    return JSON.parse(localStorage.getItem('hiddenRuleIds') || '[]');
-  });
 
 // Fetch real devices and rules from the .NET backend
   useEffect(() => {
@@ -91,25 +85,18 @@ export default function Dashboard() {
           };
         });
 
-        setTargets(mappedTargets);
+        const targetsWithComputedStatus = updateAllTargetsStatus(mappedTargets);
+
+        setTargets(targetsWithComputedStatus);
 
         // Keep selected target in sync without re-triggering the polling effect.
         setSelectedTarget((previous) => {
           if (!previous) {
-            return mappedTargets[0] ?? null;
+            return targetsWithComputedStatus[0] ?? null;
           }
 
-          return mappedTargets.find((target) => target.id === previous.id) ?? null;
+          return targetsWithComputedStatus.find((target) => target.id === previous.id) ?? null;
         });
-
-        // Set viewing rule from localStorage
-        const savedViewingRuleId = localStorage.getItem('viewingRuleId');
-        if (savedViewingRuleId) {
-          const rule = mappedRules.find(r => r.id === savedViewingRuleId);
-          setViewingRule(rule || null);
-        } else {
-          setViewingRule(null);
-        }
       } catch (error) {
         console.error("Failed to load targets from API:", error);
       }
@@ -175,29 +162,6 @@ export default function Dashboard() {
 
   const handleTargetClick = (target: Target) => {
     setSelectedTarget(target);
-  };
-
-  const toggleViewRule = (rule: Rule) => {
-    const isViewing = viewingRule?.id === rule.id;
-    const newId = isViewing ? null : rule.id;
-    
-    if (newId) {
-      localStorage.setItem('viewingRuleId', newId);
-      setViewingRule(rule);
-    } else {
-      localStorage.removeItem('viewingRuleId');
-      setViewingRule(null);
-    }
-  };
-
-  const toggleRuleVisibility = (ruleId: string) => {
-    setHiddenRuleIds(prev => {
-      const next = prev.includes(ruleId) 
-        ? prev.filter(id => id !== ruleId) 
-        : [...prev, ruleId];
-      localStorage.setItem('hiddenRuleIds', JSON.stringify(next));
-      return next;
-    });
   };
 
   return (
@@ -284,8 +248,6 @@ export default function Dashboard() {
                 </div>
               );
 
-              const isHidden = hiddenRuleIds.includes(activeRule.id);
-
               return (
                 <div className={`mt-3 p-2 rounded-md w-full flex items-center justify-between transition-all ${
                   target.status === 'safe' 
@@ -297,20 +259,6 @@ export default function Dashboard() {
                   }`}>
                     {activeRule.name} ({activeRule.type})
                   </p>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleRuleVisibility(activeRule.id);
-                    }}
-                    className={`h-7 w-7 p-0 rounded-full hover:bg-white/50 flex-shrink-0 ${
-                      !isHidden ? 'text-blue-600 bg-white/30 shadow-sm' : 'text-gray-400'
-                    }`}
-                    title={isHidden ? "Show rule on map" : "Hide rule on map"}
-                  >
-                    {isHidden ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
-                  </Button>
                 </div>
               );
             })()}
@@ -326,8 +274,6 @@ export default function Dashboard() {
             selectedTarget={selectedTarget}
             onTargetClick={handleTargetClick}
             searchedLocation={searchedLocation}
-            viewingRule={viewingRule}
-            hiddenRuleIds={hiddenRuleIds}
           />
         </Card>
       </div>

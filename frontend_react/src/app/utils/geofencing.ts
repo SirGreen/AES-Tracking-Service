@@ -42,11 +42,16 @@ export function isTargetInSafeZone(target: Target): boolean {
   const { latitude, longitude, activeRuleId, rules } = target;
   const targetPoint: [number, number] = [latitude, longitude];
 
+  // Ignore devices without a valid location fix.
+  if (latitude === 0 && longitude === 0) {
+    return true;
+  }
+
   // Find active rule
   const activeRule = rules.find(r => r.id === activeRuleId);
   
-  // If no active rule or rule is disabled, return true (safe)
-  if (!activeRule || !activeRule.enabled) {
+  // If no active rule is selected, consider it safe.
+  if (!activeRule) {
     return true;
   }
 

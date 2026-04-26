@@ -22,21 +22,35 @@ export default function PairDevice() {
   const [savingId, setSavingId] = useState<number | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  // Fetch devices from backend on mount
-  const fetchDevices = async () => {
+  // Fetch devices from backend.
+  const fetchDevices = async (withLoading: boolean = false, showError: boolean = true) => {
+    if (withLoading) {
+      setIsLoading(true);
+    }
+
     try {
       const data = await getDevices();
       setDevices(data);
     } catch (error) {
       console.error('Failed to fetch devices:', error);
-      toast.error('Failed to connect to the tracking server');
+      if (showError) {
+        toast.error('Failed to connect to the tracking server');
+      }
     } finally {
-      setIsLoading(false);
+      if (withLoading) {
+        setIsLoading(false);
+      }
     }
   };
 
   useEffect(() => {
-    fetchDevices();
+    fetchDevices(true);
+
+    const intervalId = setInterval(() => {
+      fetchDevices(false, false);
+    }, 2000);
+
+    return () => clearInterval(intervalId);
   }, []);
 
   // POST /api/devices/pair
@@ -61,6 +75,7 @@ export default function PairDevice() {
       setDeviceId('');
       setChildName('');
       toast.success(`Device "${newDevice.deviceIdentifier}" paired successfully!`);
+      await fetchDevices(false);
     } catch (error: any) {
       console.error('Failed to pair device:', error);
       toast.error(error.message || 'Failed to pair device');
@@ -101,6 +116,7 @@ export default function PairDevice() {
       toast.success('Child name updated successfully!');
       setEditingId(null);
       setEditingName('');
+      await fetchDevices(false);
     } catch (error: any) {
       console.error('Failed to update device:', error);
       toast.error(error.message || 'Failed to update device');
@@ -117,6 +133,7 @@ export default function PairDevice() {
       await deleteDevice(device.id);
       setDevices(prev => prev.filter(d => d.id !== device.id));
       toast.success(`Device "${device.deviceIdentifier}" removed`);
+      await fetchDevices(false);
     } catch (error: any) {
       console.error('Failed to delete device:', error);
       toast.error(error.message || 'Failed to delete device');
@@ -207,8 +224,7 @@ export default function PairDevice() {
           size="sm"
           variant="outline"
           onClick={() => {
-            setIsLoading(true);
-            fetchDevices();
+            fetchDevices(true);
           }}
           disabled={isLoading}
         >

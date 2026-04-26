@@ -20,6 +20,17 @@ export default function RuleManager() {
   const [targets, setTargets] = useState<Target[]>([]);
   const [allRules, setAllRules] = useState<Rule[]>([]);
 
+  const normalizeTimeInput = (value: string): string => {
+    const digits = value.replace(/\D/g, '').slice(0, 4);
+    if (digits.length <= 2) {
+      return digits;
+    }
+
+    return `${digits.slice(0, 2)}:${digits.slice(2)}`;
+  };
+
+  const isValid24HourTime = (value: string): boolean => /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+
   // Fetch live devices and rules from the .NET backend
   useEffect(() => {
     const fetchRuleManagerData = async () => {
@@ -91,6 +102,20 @@ export default function RuleManager() {
   const [endTime, setEndTime] = useState('17:00');
   const [viewingRuleId, setViewingRuleId] = useState<string | null>(() => localStorage.getItem('viewingRuleId'));
 
+  const validateTimeInputs = (): boolean => {
+    if (!isValid24HourTime(startTime) || !isValid24HourTime(endTime)) {
+      toast.error('Please enter valid time in 24-hour HH:mm format (e.g., 08:00, 23:15)');
+      return false;
+    }
+
+    if (startTime === endTime) {
+      toast.error('Start time and end time cannot be the same');
+      return false;
+    }
+
+    return true;
+  };
+
   const startDrawing = () => {
     if (!targetForRule) {
       toast.error('Please select a target first');
@@ -98,6 +123,10 @@ export default function RuleManager() {
     }
     if (!ruleName.trim()) {
       toast.error('Please enter a rule name');
+      return;
+    }
+
+    if (!validateTimeInputs()) {
       return;
     }
     
@@ -144,6 +173,10 @@ export default function RuleManager() {
 
     if (tempRule.type === 'circle' && !tempRule.center) {
       toast.error('Please click on the map to set circle center');
+      return;
+    }
+
+    if (!validateTimeInputs()) {
       return;
     }
 
@@ -354,23 +387,31 @@ const deleteRule = async (ruleId: string) => {
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">Start Time</label>
                   <Input
-                    type="time"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="^([01]\\d|2[0-3]):([0-5]\\d)$"
+                    placeholder="HH:mm"
+                    maxLength={5}
                     value={startTime}
-                    onChange={(e) => setStartTime(e.target.value)}
+                    onChange={(e) => setStartTime(normalizeTimeInput(e.target.value))}
                     className="bg-white"
                   />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-700 mb-1 font-medium">End Time</label>
                   <Input
-                    type="time"
+                    type="text"
+                    inputMode="numeric"
+                    pattern="^([01]\\d|2[0-3]):([0-5]\\d)$"
+                    placeholder="HH:mm"
+                    maxLength={5}
                     value={endTime}
-                    onChange={(e) => setEndTime(e.target.value)}
+                    onChange={(e) => setEndTime(normalizeTimeInput(e.target.value))}
                     className="bg-white"
                   />
                 </div>
                 <p className="text-xs text-gray-600 mt-2">
-                  💡 Active from {startTime} to {endTime}
+                  💡 Active from {startTime} to {endTime} (24-hour HH:mm)
                   {startTime > endTime && ' (overnight)'}
                 </p>
               </div>

@@ -18,9 +18,9 @@ public class RuleEvaluationService(AppDbContext dbContext) : IRuleEvaluationServ
             return new RuleValidationResult(false, "Child name is required.");
         }
 
-        if (rule.StartTime >= rule.EndTime)
+        if (rule.StartTime == rule.EndTime)
         {
-            return new RuleValidationResult(false, "Rule start time must be before end time.");
+            return new RuleValidationResult(false, "Start time and end time cannot be the same. Use 24-hour format (HH:mm).");
         }
 
         if (rule.RuleType == RuleType.Circle)
@@ -55,12 +55,13 @@ public class RuleEvaluationService(AppDbContext dbContext) : IRuleEvaluationServ
             }
         }
 
-        var hasOverlap = await _dbContext.Rules
-            .AnyAsync(existing => existing.ChildName == rule.ChildName
-                && existing.Id != ignoreRuleId
-                && rule.StartTime < existing.EndTime
-                && existing.StartTime < rule.EndTime,
-                cancellationToken);
+        var existingRules = await _dbContext.Rules
+            .AsNoTracking()
+            .Where(existing => existing.ChildName == rule.ChildName && existing.Id != ignoreRuleId)
+            .ToListAsync(cancellationToken);
+
+        var hasOverlap = existingRules.Any(existing =>
+            DoTimeRangesOverlap(rule.StartTime, rule.EndTime, existing.StartTime, existing.EndTime));
 
         return hasOverlap
             ? new RuleValidationResult(false, "This child already has another rule that overlaps with the selected time range.")
@@ -80,13 +81,15 @@ public class RuleEvaluationService(AppDbContext dbContext) : IRuleEvaluationServ
         }
 
         var nowTime = TimeOnly.FromDateTime(DateTime.UtcNow);
-        var activeRule = await _dbContext.Rules
+        var childRules = await _dbContext.Rules
             .AsNoTracking()
-            .Where(rule => rule.ChildName == device.ChildName
-                && rule.StartTime <= nowTime
-                && nowTime <= rule.EndTime)
+            .Where(rule => rule.ChildName == device.ChildName)
+            .ToListAsync(cancellationToken);
+
+        var activeRule = childRules
+            .Where(rule => IsTimeInRange(nowTime, rule.StartTime, rule.EndTime))
             .OrderBy(rule => rule.StartTime)
-            .FirstOrDefaultAsync(cancellationToken);
+            .FirstOrDefault();
 
         if (activeRule is null)
         {
@@ -221,6 +224,57 @@ public class RuleEvaluationService(AppDbContext dbContext) : IRuleEvaluationServ
     private static bool IsValidLatitude(double latitude) => latitude >= -90 && latitude <= 90;
 
     private static bool IsValidLongitude(double longitude) => longitude >= -180 && longitude <= 180;
+
+    private static bool IsTimeInRange(TimeOnly current, TimeOnly start, TimeOnly end)
+    {
+        var currentMinutes = ToTotalMinutes(current);
+        var startMinutes = ToTotalMinutes(start);
+        var endMinutes = ToTotalMinutes(end);
+
+        if (startMinutes < endMinutes)
+        {
+            return currentMinutes >= startMinutes && currentMinutes < endMinutes;
+        }
+
+        // Overnight schedule (e.g., 22:00 - 06:00)
+        return currentMinutes >= startMinutes || currentMinutes < endMinutes;
+    }
+
+    private static bool DoTimeRangesOverlap(TimeOnly start1, TimeOnly end1, TimeOnly start2, TimeOnly end2)
+    {
+        var segments1 = ToNonOvernightSegments(start1, end1);
+        var segments2 = ToNonOvernightSegments(start2, end2);
+
+        foreach (var segment1 in segments1)
+        {
+            foreach (var segment2 in segments2)
+            {
+                if (segment1.Start < segment2.End && segment2.Start < segment1.End)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private static List<(int Start, int End)> ToNonOvernightSegments(TimeOnly start, TimeOnly end)
+    {
+        const int totalMinutesInDay = 24 * 60;
+        var startMinutes = ToTotalMinutes(start);
+        var endMinutes = ToTotalMinutes(end);
+
+        if (startMinutes < endMinutes)
+        {
+            return [(startMinutes, endMinutes)];
+        }
+
+        // Overnight schedule split into two non-overnight segments.
+        return [(startMinutes, totalMinutesInDay), (0, endMinutes)];
+    }
+
+    private static int ToTotalMinutes(TimeOnly value) => value.Hour * 60 + value.Minute;
 
     private static double DegreesToRadians(double degrees) => degrees * (Math.PI / 180);
 }
